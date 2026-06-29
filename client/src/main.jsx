@@ -6,9 +6,22 @@ function App() {
   const [roomId, setRoomId] = useState('');
   const [statusText, setStatusText] = useState('');
 
-  function handleCreateRoom() {
+  async function handleCreateRoom() {
     console.log('创建房间');
-    setStatusText('创建房间按钮已点击');
+
+    try {
+      const response = await fetch('/api/rooms', { method: 'POST' });
+      const data = await response.json();
+
+      if (!response.ok || !data.ok) {
+        throw new Error('创建房间失败');
+      }
+
+      setStatusText(`房间已创建：${data.roomId}`);
+    } catch (error) {
+      console.error(error);
+      setStatusText('创建房间失败');
+    }
   }
 
   function handleJoinRoom() {
