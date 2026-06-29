@@ -1,11 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { io } from 'socket.io-client';
 import './styles.css';
 
 function App() {
   const [roomId, setRoomId] = useState('');
   const [statusText, setStatusText] = useState('');
   const [path, setPath] = useState(window.location.pathname);
+  const [playerCount, setPlayerCount] = useState(0);
+  const roomMatch = path.match(/^\/room\/([^/]+)$/);
+  const currentRoomId = roomMatch?.[1];
 
   useEffect(() => {
     function handlePopState() {
@@ -18,6 +22,26 @@ function App() {
       window.removeEventListener('popstate', handlePopState);
     };
   }, []);
+
+  useEffect(() => {
+    if (!currentRoomId) {
+      setPlayerCount(0);
+      return undefined;
+    }
+
+    const socket = io({
+      path: '/socket.io'
+    });
+
+    socket.emit('join-room', currentRoomId);
+    socket.on('player-count', (count) => {
+      setPlayerCount(count);
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [currentRoomId]);
 
   async function handleCreateRoom() {
     console.log('创建房间');
@@ -71,13 +95,12 @@ function App() {
     }
   }
 
-  const roomMatch = path.match(/^\/room\/([^/]+)$/);
-
   if (roomMatch) {
     return (
       <main>
         <h1>德州扑克房间</h1>
-        <p>当前房间号：{roomMatch[1]}</p>
+        <p>当前房间号：{currentRoomId}</p>
+        <p>当前玩家数量：{playerCount}</p>
         <p>已进入房间</p>
       </main>
     );
