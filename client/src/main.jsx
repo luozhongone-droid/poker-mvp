@@ -4,13 +4,16 @@ import './styles.css';
 
 function App() {
   const [roomId, setRoomId] = useState('');
+  const [statusText, setStatusText] = useState('');
 
   function handleCreateRoom() {
     console.log('创建房间');
+    setStatusText('创建房间按钮已点击');
   }
 
   function handleJoinRoom() {
     console.log('加入房间', roomId);
+    setStatusText(`加入房间按钮已点击：${roomId}`);
   }
 
   return (
@@ -32,6 +35,8 @@ function App() {
           加入房间
         </button>
       </div>
+
+      {statusText && <p>{statusText}</p>}
     </main>
   );
 }
