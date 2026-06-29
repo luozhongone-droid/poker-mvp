@@ -1,0 +1,22 @@
+body {
+  font-family: Arial, sans-serif;
+  margin: 24px;
+}
+
+main {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 360px;
+}
+
+button,
+input {
+  font: inherit;
+  padding: 8px 10px;
+}
+
+div {
+  display: flex;
+  gap: 8px;
+}

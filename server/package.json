@@ -1,0 +1,14 @@
+{
+  "name": "poker-mvp-server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node src/index.js",
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "express": "^5.0.0"
+  },
+  "devDependencies": {}
+}
