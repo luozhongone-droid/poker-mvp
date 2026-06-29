@@ -39,9 +39,36 @@ function App() {
     }
   }
 
-  function handleJoinRoom() {
-    console.log('加入房间', roomId);
-    setStatusText(`加入房间按钮已点击：${roomId}`);
+  async function handleJoinRoom() {
+    const targetRoomId = roomId.trim();
+    console.log('加入房间', targetRoomId);
+
+    if (!targetRoomId) {
+      setStatusText('房间不存在');
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/rooms/${encodeURIComponent(targetRoomId)}/join`, {
+        method: 'POST'
+      });
+      const data = await response.json();
+
+      if (response.status === 404) {
+        setStatusText('房间不存在');
+        return;
+      }
+
+      if (!response.ok || !data.ok) {
+        throw new Error('加入房间失败');
+      }
+
+      window.history.pushState({}, '', `/room/${data.roomId}`);
+      setPath(window.location.pathname);
+    } catch (error) {
+      console.error(error);
+      setStatusText('加入房间失败');
+    }
   }
 
   const roomMatch = path.match(/^\/room\/([^/]+)$/);

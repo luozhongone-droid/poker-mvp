@@ -29,6 +29,17 @@ app.post('/rooms', (req, res) => {
   res.json({ ok: true, roomId });
 });
 
+app.post('/rooms/:roomId/join', (req, res) => {
+  const { roomId } = req.params;
+
+  if (!rooms.has(roomId)) {
+    res.status(404).json({ ok: false, message: '房间不存在' });
+    return;
+  }
+
+  res.json({ ok: true, roomId });
+});
+
 app.listen(port, () => {
   console.log(`Server listening on http://localhost:${port}`);
 });
