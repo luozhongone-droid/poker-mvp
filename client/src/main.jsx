@@ -10,6 +10,8 @@ function App() {
   const [path, setPath] = useState(window.location.pathname);
   const [playerCount, setPlayerCount] = useState(0);
   const [players, setPlayers] = useState([]);
+  const [playerSeats, setPlayerSeats] = useState({ player1: null, player2: null });
+  const [roomFull, setRoomFull] = useState(false);
   const roomMatch = path.match(/^\/room\/([^/]+)$/);
   const currentRoomId = roomMatch?.[1];
 
@@ -29,6 +31,8 @@ function App() {
     if (!currentRoomId) {
       setPlayerCount(0);
       setPlayers([]);
+      setPlayerSeats({ player1: null, player2: null });
+      setRoomFull(false);
       return undefined;
     }
 
@@ -46,6 +50,12 @@ function App() {
     });
     socket.on('player-list', (nextPlayers) => {
       setPlayers(nextPlayers);
+    });
+    socket.on('players-updated', (nextSeats) => {
+      setPlayerSeats(nextSeats);
+    });
+    socket.on('room-full', () => {
+      setRoomFull(true);
     });
 
     return () => {
@@ -125,6 +135,11 @@ function App() {
         <h1>德州扑克房间</h1>
         <p>当前房间号：{currentRoomId}</p>
         <p>当前玩家数量：{playerCount}</p>
+        {roomFull && <p>房间已满</p>}
+        <section>
+          <p>Player 1：{playerSeats.player1?.nickname || '等待加入...'}</p>
+          <p>Player 2：{playerSeats.player2?.nickname || '等待加入...'}</p>
+        </section>
         <section>
           <p>玩家列表：</p>
           <ul>

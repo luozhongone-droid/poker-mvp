@@ -13,6 +13,13 @@ const port = process.env.PORT || 3001;
 const rooms = new Map();
 const roomPlayers = new Map();
 
+function createEmptySeats() {
+  return {
+    player1: null,
+    player2: null
+  };
+}
+
 function createRoomId() {
   let roomId = Math.floor(Math.random() * 1000000)
     .toString()
@@ -50,14 +57,17 @@ app.post('/rooms/:roomId/join', (req, res) => {
 });
 
 function getRoomPlayers(roomId) {
-  return Array.from(roomPlayers.get(roomId)?.values() || []);
+  const seats = roomPlayers.get(roomId);
+  return [seats?.player1, seats?.player2].filter(Boolean);
 }
 
 function broadcastRoomPlayers(roomId) {
+  const seats = roomPlayers.get(roomId) || createEmptySeats();
   const players = getRoomPlayers(roomId);
   const playerCount = players.length;
   io.to(roomId).emit('player-count', playerCount);
   io.to(roomId).emit('player-list', players);
+  io.to(roomId).emit('players-updated', seats);
 }
 
 function removePlayerFromRoom(socket) {
@@ -67,10 +77,17 @@ function removePlayerFromRoom(socket) {
     return;
   }
 
-  const players = roomPlayers.get(roomId);
-  players.delete(socket.id);
+  const seats = roomPlayers.get(roomId);
 
-  if (players.size === 0) {
+  if (seats.player1?.socketId === socket.id) {
+    seats.player1 = null;
+  }
+
+  if (seats.player2?.socketId === socket.id) {
+    seats.player2 = null;
+  }
+
+  if (!seats.player1 && !seats.player2) {
     roomPlayers.delete(roomId);
   }
 
@@ -96,16 +113,33 @@ io.on('connection', (socket) => {
     }
 
     if (!roomPlayers.has(roomId)) {
-      roomPlayers.set(roomId, new Map());
+      roomPlayers.set(roomId, createEmptySeats());
+    }
+
+    const seats = roomPlayers.get(roomId);
+
+    if (seats.player1 && seats.player2) {
+      socket.emit('room-full');
+      socket.emit('player-count', 2);
+      socket.emit('player-list', getRoomPlayers(roomId));
+      socket.emit('players-updated', seats);
+      return;
+    }
+
+    const player = {
+      socketId: socket.id,
+      nickname: nickname || '未命名玩家'
+    };
+
+    if (!seats.player1) {
+      seats.player1 = player;
+    } else {
+      seats.player2 = player;
     }
 
     socket.data.roomId = roomId;
-    socket.data.nickname = nickname || '未命名玩家';
+    socket.data.nickname = player.nickname;
     socket.join(roomId);
-    roomPlayers.get(roomId).set(socket.id, {
-      socketId: socket.id,
-      nickname: socket.data.nickname
-    });
     broadcastRoomPlayers(roomId);
   });
 
