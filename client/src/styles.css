@@ -1,6 +1,14 @@
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
+  padding: 0;
+  width: 100%;
+}
+
 body {
   font-family: Arial, sans-serif;
-  margin: 0;
 }
 
 main {
@@ -35,12 +43,18 @@ div {
   margin: 0;
   max-width: none;
   min-height: 100vh;
+  min-height: 100svh;
   overflow-x: hidden;
   padding: 16px;
+  width: 100vw;
 }
 
 .room-header {
+  box-sizing: border-box;
+  margin: 0 auto;
+  max-width: 480px;
   text-align: center;
+  width: 100%;
 }
 
 .room-header h1 {
@@ -56,11 +70,15 @@ div {
 
 .table-area {
   align-items: center;
+  box-sizing: border-box;
   display: grid;
   grid-template-rows: auto 1fr auto;
   justify-items: center;
+  margin: 0 auto;
+  max-width: 480px;
   min-height: clamp(460px, 70vh, 560px);
   position: relative;
+  width: 100%;
 }
 
 .poker-table {
@@ -157,9 +175,13 @@ div {
 
 .room-actions {
   align-items: center;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: 10px;
+  margin: 0 auto;
+  max-width: 480px;
+  width: 100%;
 }
 
 .room-actions button {
