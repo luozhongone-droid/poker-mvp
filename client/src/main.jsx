@@ -14,6 +14,8 @@ function App() {
   const [playerSeats, setPlayerSeats] = useState({ player1: null, player2: null });
   const [roomFull, setRoomFull] = useState(false);
   const [socketId, setSocketId] = useState('');
+  const [roomState, setRoomState] = useState({ gameState: 'waiting', countdown: null });
+  const [hand, setHand] = useState([]);
   const roomMatch = path.match(/^\/room\/([^/]+)$/);
   const currentRoomId = roomMatch?.[1];
 
@@ -36,10 +38,15 @@ function App() {
       setPlayerSeats({ player1: null, player2: null });
       setRoomFull(false);
       setSocketId('');
+      setRoomState({ gameState: 'waiting', countdown: null });
+      setHand([]);
       return undefined;
     }
 
     const savedNickname = localStorage.getItem('nickname') || '';
+    setRoomState({ gameState: 'waiting', countdown: null });
+    setHand([]);
+    setRoomFull(false);
     const socket = io({
       path: '/socket.io'
     });
@@ -61,6 +68,12 @@ function App() {
     socket.on('players-updated', (nextSeats) => {
       setPlayerSeats(nextSeats);
     });
+    socket.on('room-state', (nextRoomState) => {
+      setRoomState(nextRoomState);
+    });
+    socket.on('hand', (nextHand) => {
+      setHand(nextHand);
+    });
     socket.on('room-full', () => {
       setRoomFull(true);
     });
@@ -68,6 +81,7 @@ function App() {
     return () => {
       setSocketId('');
       socketRef.current = null;
+      setHand([]);
       socket.disconnect();
     };
   }, [currentRoomId]);
@@ -138,31 +152,56 @@ function App() {
     }
   }
 
-  function handleReady() {
-    socketRef.current?.emit('player-ready');
+  function handleReady(ready) {
+    socketRef.current?.emit('player-ready', { ready });
   }
 
   if (roomMatch) {
     const mySeatKey = playerSeats.player1?.socketId === socketId ? 'player1' : 'player2';
     const mySeat = playerSeats[mySeatKey]?.socketId === socketId ? playerSeats[mySeatKey] : null;
-    const bothPlayersReady = Boolean(playerSeats.player1?.ready && playerSeats.player2?.ready);
-    const tableStatus = bothPlayersReady
-      ? '双方已准备，可以开始游戏'
-      : playerCount < 2
-        ? '等待另一位玩家加入'
-        : '等待双方准备';
+    const gameState = roomState.gameState;
+    const countdown = roomState.countdown;
+    const tableStatus =
+      gameState === 'countdown' && countdown
+        ? `双方已准备，${countdown} 秒后开始游戏`
+        : gameState === 'playing'
+          ? '游戏已开始'
+          : playerCount < 2
+            ? '等待另一位玩家加入'
+            : '等待双方准备';
+
+    function renderHoleCards(cards) {
+      return (
+        <div className="hole-cards" aria-label="我的手牌">
+          {cards.map((card) => (
+            <span
+              className={`playing-card ${card.suit === '♥' || card.suit === '♦' ? 'is-red' : 'is-black'}`}
+              key={`${card.rank}${card.suit}`}
+            >
+              {card.rank}
+              {card.suit}
+            </span>
+          ))}
+        </div>
+      );
+    }
 
     function renderPlayerCard(label, player) {
+      const isCurrentPlayer = player?.socketId === socketId;
       const statusText = player ? (player.ready ? '已准备' : '未准备') : '等待加入';
       const statusClassName = player
         ? `player-card__status ${player.ready ? 'is-ready' : 'is-waiting'}`
         : 'player-card__status is-empty';
+      const showOwnHand = Boolean(player?.hasHand && isCurrentPlayer && hand.length);
+      const showOpponentDealt = Boolean(player?.hasHand && !isCurrentPlayer);
 
       return (
         <section className="player-card">
           <span className="player-card__label">{label}</span>
           <strong className="player-card__name">{player?.nickname || '等待加入...'}</strong>
           <span className={statusClassName}>{statusText}</span>
+          {showOwnHand && renderHoleCards(hand)}
+          {showOpponentDealt && <span className="dealt-badge">已发牌</span>}
         </section>
       );
     }
@@ -188,8 +227,12 @@ function App() {
 
         <footer className="room-actions">
           {mySeat ? (
-            <button type="button" onClick={handleReady} disabled={mySeat.ready}>
-              {mySeat.ready ? '已准备' : '准备'}
+            <button
+              type="button"
+              onClick={() => handleReady(!mySeat.ready)}
+              disabled={gameState === 'playing'}
+            >
+              {gameState === 'playing' ? '已准备' : mySeat.ready ? '取消准备' : '准备'}
             </button>
           ) : (
             <p>{roomFull ? '房间已满' : '等待入座'}</p>

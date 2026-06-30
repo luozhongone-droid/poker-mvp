@@ -173,6 +173,41 @@ div {
   color: #b9c2bf;
 }
 
+.hole-cards {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 4px;
+}
+
+.playing-card {
+  background: #f7faf6;
+  border: 1px solid rgba(255, 255, 255, 0.54);
+  border-radius: 8px;
+  box-shadow: 0 7px 14px rgba(0, 0, 0, 0.28);
+  box-sizing: border-box;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1;
+  min-width: 42px;
+  padding: 8px 6px;
+}
+
+.playing-card.is-red {
+  color: #d21f36;
+}
+
+.playing-card.is-black {
+  color: #141c1a;
+}
+
+.dealt-badge {
+  color: #d7e8dd;
+  font-size: 13px;
+  font-weight: 700;
+  margin-top: 4px;
+}
+
 .room-actions {
   align-items: center;
   box-sizing: border-box;
