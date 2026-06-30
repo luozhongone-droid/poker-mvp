@@ -146,47 +146,62 @@ function App() {
     const mySeatKey = playerSeats.player1?.socketId === socketId ? 'player1' : 'player2';
     const mySeat = playerSeats[mySeatKey]?.socketId === socketId ? playerSeats[mySeatKey] : null;
     const bothPlayersReady = Boolean(playerSeats.player1?.ready && playerSeats.player2?.ready);
-    const readyMessage = bothPlayersReady
+    const tableStatus = bothPlayersReady
       ? '双方已准备，可以开始游戏'
-      : '等待另一位玩家';
+      : playerCount < 2
+        ? '等待另一位玩家加入'
+        : '等待双方准备';
+
+    function renderPlayerCard(label, player) {
+      const statusText = player ? (player.ready ? '已准备' : '未准备') : '等待加入';
+      const statusClassName = player
+        ? `player-card__status ${player.ready ? 'is-ready' : 'is-waiting'}`
+        : 'player-card__status is-empty';
+
+      return (
+        <section className="player-card">
+          <span className="player-card__label">{label}</span>
+          <strong className="player-card__name">{player?.nickname || '等待加入...'}</strong>
+          <span className={statusClassName}>{statusText}</span>
+        </section>
+      );
+    }
 
     return (
-      <main>
-        <h1>德州扑克房间</h1>
-        <p>当前房间号：{currentRoomId}</p>
-        <p>当前玩家数量：{playerCount}</p>
-        {roomFull && <p>房间已满</p>}
-        <section>
-          <p>
-            Player 1：{playerSeats.player1?.nickname || '等待加入...'}
-            {playerSeats.player1 && ` ${playerSeats.player1.ready ? '已准备' : '未准备'}`}
-          </p>
-          <p>
-            Player 2：{playerSeats.player2?.nickname || '等待加入...'}
-            {playerSeats.player2 && ` ${playerSeats.player2.ready ? '已准备' : '未准备'}`}
-          </p>
+      <main className="room-page">
+        <header className="room-header">
+          <h1>Room: {currentRoomId}</h1>
+          <p>当前玩家数量：{playerCount}</p>
+        </header>
+
+        <section className="table-area" aria-label="德州扑克房间">
+          <div className="seat seat--top">{renderPlayerCard('Player 1', playerSeats.player1)}</div>
+
+          <div className="poker-table">
+            <div className="table-status">
+              {roomFull ? '房间已满' : tableStatus}
+            </div>
+          </div>
+
+          <div className="seat seat--bottom">{renderPlayerCard('Player 2', playerSeats.player2)}</div>
         </section>
-        {mySeat && !mySeat.ready && (
-          <button type="button" onClick={handleReady}>
-            准备
-          </button>
-        )}
-        <p>{readyMessage}</p>
-        <section>
-          <p>玩家列表：</p>
-          <ul>
-            {players.map((player) => (
-              <li key={player.socketId}>{player.nickname}</li>
-            ))}
-          </ul>
-        </section>
-        <p>已进入房间</p>
+
+        <footer className="room-actions">
+          {mySeat ? (
+            <button type="button" onClick={handleReady} disabled={mySeat.ready}>
+              {mySeat.ready ? '已准备' : '准备'}
+            </button>
+          ) : (
+            <p>{roomFull ? '房间已满' : '等待入座'}</p>
+          )}
+          {playerCount < 2 && !roomFull && <p>等待另一位玩家加入</p>}
+        </footer>
       </main>
     );
   }
 
   return (
-    <main>
+    <main className="home-page">
       <h1>德州扑克 MVP</h1>
 
       <button type="button" onClick={handleCreateRoom}>
