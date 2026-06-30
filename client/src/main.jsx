@@ -186,6 +186,15 @@ function App() {
       );
     }
 
+    function renderCardBacks() {
+      return (
+        <div className="hole-cards" aria-label="对手盖牌">
+          <span className="playing-card card-back">♠</span>
+          <span className="playing-card card-back">♠</span>
+        </div>
+      );
+    }
+
     function renderPlayerCard(label, player) {
       const isCurrentPlayer = player?.socketId === socketId;
       const statusText = player ? (player.ready ? '已准备' : '未准备') : '等待加入';
@@ -201,7 +210,7 @@ function App() {
           <strong className="player-card__name">{player?.nickname || '等待加入...'}</strong>
           <span className={statusClassName}>{statusText}</span>
           {showOwnHand && renderHoleCards(hand)}
-          {showOpponentDealt && <span className="dealt-badge">已发牌</span>}
+          {showOpponentDealt && renderCardBacks()}
         </section>
       );
     }

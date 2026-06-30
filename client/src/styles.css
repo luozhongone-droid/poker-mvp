@@ -201,11 +201,13 @@ div {
   color: #141c1a;
 }
 
-.dealt-badge {
-  color: #d7e8dd;
-  font-size: 13px;
-  font-weight: 700;
-  margin-top: 4px;
+.playing-card.card-back {
+  background:
+    radial-gradient(circle at 50% 42%, rgba(255, 255, 255, 0.24) 0 3px, transparent 4px),
+    linear-gradient(135deg, #142848 0%, #761f31 100%);
+  border-color: rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.72);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
 }
 
 .room-actions {
