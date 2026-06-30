@@ -11,6 +11,7 @@ const io = new Server(server, {
 });
 const port = process.env.PORT || 3001;
 const rooms = new Map();
+const roomPlayers = new Map();
 
 function createRoomId() {
   let roomId = Math.floor(Math.random() * 1000000)
@@ -48,32 +49,68 @@ app.post('/rooms/:roomId/join', (req, res) => {
   res.json({ ok: true, roomId });
 });
 
-function broadcastPlayerCount(roomId) {
-  const playerCount = io.sockets.adapter.rooms.get(roomId)?.size || 0;
+function getRoomPlayers(roomId) {
+  return Array.from(roomPlayers.get(roomId)?.values() || []);
+}
+
+function broadcastRoomPlayers(roomId) {
+  const players = getRoomPlayers(roomId);
+  const playerCount = players.length;
   io.to(roomId).emit('player-count', playerCount);
+  io.to(roomId).emit('player-list', players);
+}
+
+function removePlayerFromRoom(socket) {
+  const { roomId } = socket.data;
+
+  if (!roomId || !roomPlayers.has(roomId)) {
+    return;
+  }
+
+  const players = roomPlayers.get(roomId);
+  players.delete(socket.id);
+
+  if (players.size === 0) {
+    roomPlayers.delete(roomId);
+  }
+
+  socket.leave(roomId);
+  socket.data.roomId = undefined;
+  socket.data.nickname = undefined;
+  broadcastRoomPlayers(roomId);
 }
 
 io.on('connection', (socket) => {
-  socket.on('join-room', (roomId) => {
+  socket.on('join-room', (payload) => {
+    const roomId = typeof payload === 'string' ? payload : payload?.roomId;
+    const nickname = typeof payload === 'string' ? '' : payload?.nickname?.trim();
+
     if (!rooms.has(roomId)) {
       socket.emit('player-count', 0);
+      socket.emit('player-list', []);
       return;
     }
 
     if (socket.data.roomId) {
-      socket.leave(socket.data.roomId);
-      broadcastPlayerCount(socket.data.roomId);
+      removePlayerFromRoom(socket);
+    }
+
+    if (!roomPlayers.has(roomId)) {
+      roomPlayers.set(roomId, new Map());
     }
 
     socket.data.roomId = roomId;
+    socket.data.nickname = nickname || '未命名玩家';
     socket.join(roomId);
-    broadcastPlayerCount(roomId);
+    roomPlayers.get(roomId).set(socket.id, {
+      socketId: socket.id,
+      nickname: socket.data.nickname
+    });
+    broadcastRoomPlayers(roomId);
   });
 
   socket.on('disconnect', () => {
-    if (socket.data.roomId) {
-      broadcastPlayerCount(socket.data.roomId);
-    }
+    removePlayerFromRoom(socket);
   });
 });
 
