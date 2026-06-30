@@ -128,7 +128,8 @@ io.on('connection', (socket) => {
 
     const player = {
       socketId: socket.id,
-      nickname: nickname || '未命名玩家'
+      nickname: nickname || '未命名玩家',
+      ready: false
     };
 
     if (!seats.player1) {
@@ -140,6 +141,26 @@ io.on('connection', (socket) => {
     socket.data.roomId = roomId;
     socket.data.nickname = player.nickname;
     socket.join(roomId);
+    broadcastRoomPlayers(roomId);
+  });
+
+  socket.on('player-ready', () => {
+    const { roomId } = socket.data;
+
+    if (!roomId || !roomPlayers.has(roomId)) {
+      return;
+    }
+
+    const seats = roomPlayers.get(roomId);
+
+    if (seats.player1?.socketId === socket.id) {
+      seats.player1.ready = true;
+    }
+
+    if (seats.player2?.socketId === socket.id) {
+      seats.player2.ready = true;
+    }
+
     broadcastRoomPlayers(roomId);
   });
 

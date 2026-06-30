@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { io } from 'socket.io-client';
 import './styles.css';
 
 function App() {
+  const socketRef = useRef(null);
   const [roomId, setRoomId] = useState('');
   const [nickname, setNickname] = useState(() => localStorage.getItem('nickname') || '');
   const [statusText, setStatusText] = useState('');
@@ -12,6 +13,7 @@ function App() {
   const [players, setPlayers] = useState([]);
   const [playerSeats, setPlayerSeats] = useState({ player1: null, player2: null });
   const [roomFull, setRoomFull] = useState(false);
+  const [socketId, setSocketId] = useState('');
   const roomMatch = path.match(/^\/room\/([^/]+)$/);
   const currentRoomId = roomMatch?.[1];
 
@@ -33,6 +35,7 @@ function App() {
       setPlayers([]);
       setPlayerSeats({ player1: null, player2: null });
       setRoomFull(false);
+      setSocketId('');
       return undefined;
     }
 
@@ -40,10 +43,14 @@ function App() {
     const socket = io({
       path: '/socket.io'
     });
+    socketRef.current = socket;
 
-    socket.emit('join-room', {
-      roomId: currentRoomId,
-      nickname: savedNickname
+    socket.on('connect', () => {
+      setSocketId(socket.id);
+      socket.emit('join-room', {
+        roomId: currentRoomId,
+        nickname: savedNickname
+      });
     });
     socket.on('player-count', (count) => {
       setPlayerCount(count);
@@ -59,6 +66,8 @@ function App() {
     });
 
     return () => {
+      setSocketId('');
+      socketRef.current = null;
       socket.disconnect();
     };
   }, [currentRoomId]);
@@ -129,7 +138,18 @@ function App() {
     }
   }
 
+  function handleReady() {
+    socketRef.current?.emit('player-ready');
+  }
+
   if (roomMatch) {
+    const mySeatKey = playerSeats.player1?.socketId === socketId ? 'player1' : 'player2';
+    const mySeat = playerSeats[mySeatKey]?.socketId === socketId ? playerSeats[mySeatKey] : null;
+    const bothPlayersReady = Boolean(playerSeats.player1?.ready && playerSeats.player2?.ready);
+    const readyMessage = bothPlayersReady
+      ? '双方已准备，可以开始游戏'
+      : '等待另一位玩家';
+
     return (
       <main>
         <h1>德州扑克房间</h1>
@@ -137,9 +157,21 @@ function App() {
         <p>当前玩家数量：{playerCount}</p>
         {roomFull && <p>房间已满</p>}
         <section>
-          <p>Player 1：{playerSeats.player1?.nickname || '等待加入...'}</p>
-          <p>Player 2：{playerSeats.player2?.nickname || '等待加入...'}</p>
+          <p>
+            Player 1：{playerSeats.player1?.nickname || '等待加入...'}
+            {playerSeats.player1 && ` ${playerSeats.player1.ready ? '已准备' : '未准备'}`}
+          </p>
+          <p>
+            Player 2：{playerSeats.player2?.nickname || '等待加入...'}
+            {playerSeats.player2 && ` ${playerSeats.player2.ready ? '已准备' : '未准备'}`}
+          </p>
         </section>
+        {mySeat && !mySeat.ready && (
+          <button type="button" onClick={handleReady}>
+            准备
+          </button>
+        )}
+        <p>{readyMessage}</p>
         <section>
           <p>玩家列表：</p>
           <ul>
