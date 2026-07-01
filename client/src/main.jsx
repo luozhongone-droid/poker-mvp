@@ -18,9 +18,15 @@ function App() {
     gameState: 'waiting',
     street: 'preflop',
     communityCards: [],
+    currentTurn: null,
+    pot: 0,
+    winnerSeat: null,
+    handEnded: false,
+    actionLog: [],
     countdown: null
   });
   const [hand, setHand] = useState([]);
+  const [actionMessage, setActionMessage] = useState('');
   const roomMatch = path.match(/^\/room\/([^/]+)$/);
   const currentRoomId = roomMatch?.[1];
 
@@ -43,14 +49,36 @@ function App() {
       setPlayerSeats({ player1: null, player2: null });
       setRoomFull(false);
       setSocketId('');
-      setRoomState({ gameState: 'waiting', street: 'preflop', communityCards: [], countdown: null });
+      setRoomState({
+        gameState: 'waiting',
+        street: 'preflop',
+        communityCards: [],
+        currentTurn: null,
+        pot: 0,
+        winnerSeat: null,
+        handEnded: false,
+        actionLog: [],
+        countdown: null
+      });
       setHand([]);
+      setActionMessage('');
       return undefined;
     }
 
     const savedNickname = localStorage.getItem('nickname') || '';
-    setRoomState({ gameState: 'waiting', street: 'preflop', communityCards: [], countdown: null });
+    setRoomState({
+      gameState: 'waiting',
+      street: 'preflop',
+      communityCards: [],
+      currentTurn: null,
+      pot: 0,
+      winnerSeat: null,
+      handEnded: false,
+      actionLog: [],
+      countdown: null
+    });
     setHand([]);
+    setActionMessage('');
     setRoomFull(false);
     const socket = io({
       path: '/socket.io'
@@ -76,6 +104,13 @@ function App() {
     socket.on('room-state', (nextRoomState) => {
       setRoomState(nextRoomState);
     });
+    socket.on('game-updated', (nextRoomState) => {
+      setRoomState(nextRoomState);
+      setActionMessage('');
+    });
+    socket.on('action-error', (error) => {
+      setActionMessage(error?.message || '操作失败');
+    });
     socket.on('hand', (nextHand) => {
       setHand(nextHand);
     });
@@ -87,6 +122,7 @@ function App() {
       setSocketId('');
       socketRef.current = null;
       setHand([]);
+      setActionMessage('');
       socket.disconnect();
     };
   }, [currentRoomId]);
@@ -161,17 +197,48 @@ function App() {
     socketRef.current?.emit('player-ready', { ready });
   }
 
+  function handlePlayerAction(action, extra = {}) {
+    socketRef.current?.emit('player-action', { action, ...extra });
+  }
+
   if (roomMatch) {
     const mySeatKey = playerSeats.player1?.socketId === socketId ? 'player1' : 'player2';
     const mySeat = playerSeats[mySeatKey]?.socketId === socketId ? playerSeats[mySeatKey] : null;
+    const mySeatNumber = mySeatKey === 'player1' && mySeat ? 1 : mySeat ? 2 : null;
+    const opponentSeat = mySeatNumber === 1 ? playerSeats.player2 : playerSeats.player1;
     const gameState = roomState.gameState;
     const countdown = roomState.countdown;
+    const street = roomState.street;
     const communityCards = roomState.communityCards || [];
+    const isMyTurn = Boolean(
+      mySeatNumber && gameState === 'playing' && street === 'preflop' && roomState.currentTurn === mySeatNumber
+    );
+    const toCall = mySeat && opponentSeat ? Math.max(0, opponentSeat.currentBet - mySeat.currentBet) : 0;
+    const raiseTo = 4;
+    const raiseAmount = mySeat ? raiseTo - mySeat.currentBet : 0;
+    const canRaise = Boolean(
+      mySeat &&
+        opponentSeat &&
+        street === 'preflop' &&
+        raiseTo > mySeat.currentBet &&
+        raiseTo > opponentSeat.currentBet &&
+        mySeat.chips >= raiseAmount
+    );
+    const winnerText =
+      gameState === 'ended' && roomState.winnerSeat
+        ? roomState.winnerSeat === mySeatNumber
+          ? '对手弃牌，你赢得本局'
+          : '你已弃牌，对手赢得本局'
+        : '';
     const tableStatus =
       gameState === 'countdown' && countdown
         ? `双方已准备，${countdown} 秒后开始游戏`
+        : gameState === 'ended'
+          ? '本局结束'
         : gameState === 'playing'
-          ? '游戏已开始'
+          ? street === 'flop'
+            ? 'Flop'
+            : `Preflop · 轮到 Player ${roomState.currentTurn || '-'}`
           : playerCount < 2
             ? '等待另一位玩家加入'
             : '等待双方准备';
@@ -239,6 +306,14 @@ function App() {
       );
     }
 
+    function renderPot() {
+      if (street !== 'flop' || !roomState.pot) {
+        return null;
+      }
+
+      return <div className="pot-badge">Pot: {roomState.pot}</div>;
+    }
+
     function renderPlayerCard(label, player) {
       const isCurrentPlayer = player?.socketId === socketId;
       const statusText = player ? (player.ready ? '已准备' : '未准备') : '等待加入';
@@ -271,6 +346,83 @@ function App() {
       );
     }
 
+    function renderActionLog() {
+      const actionLog = roomState.actionLog || [];
+
+      if (!actionLog.length) {
+        return null;
+      }
+
+      return (
+        <div className="action-log" aria-label="行动记录">
+          {actionLog.slice(-4).map((action, index) => (
+            <span key={`${action}-${index}`}>{action}</span>
+          ))}
+        </div>
+      );
+    }
+
+    function renderRoomActions() {
+      if (!mySeat) {
+        return <p>{roomFull ? '房间已满' : '等待入座'}</p>;
+      }
+
+      if (gameState === 'ended') {
+        return <p>{winnerText || '本局结束'}</p>;
+      }
+
+      if (gameState !== 'playing') {
+        return (
+          <button type="button" onClick={() => handleReady(!mySeat.ready)}>
+            {mySeat.ready ? '取消准备' : '准备'}
+          </button>
+        );
+      }
+
+      if (street !== 'preflop') {
+        return <p>Flop 已发出</p>;
+      }
+
+      if (!isMyTurn) {
+        return <p>等待对方操作</p>;
+      }
+
+      if (toCall > 0) {
+        return (
+          <div className="action-buttons">
+            <button type="button" onClick={() => handlePlayerAction('fold')}>
+              Fold
+            </button>
+            <button type="button" onClick={() => handlePlayerAction('call')}>
+              Call {toCall}
+            </button>
+            <button
+              type="button"
+              onClick={() => handlePlayerAction('raise', { raiseTo })}
+              disabled={!canRaise}
+            >
+              Raise to 4
+            </button>
+          </div>
+        );
+      }
+
+      return (
+        <div className="action-buttons">
+          <button type="button" onClick={() => handlePlayerAction('check')}>
+            Check
+          </button>
+          <button
+            type="button"
+            onClick={() => handlePlayerAction('raise', { raiseTo })}
+            disabled={!canRaise}
+          >
+            Raise to 4
+          </button>
+        </div>
+      );
+    }
+
     return (
       <main className="room-page">
         <header className="room-header">
@@ -286,6 +438,7 @@ function App() {
             <div className="table-status">
               {roomFull ? '房间已满' : tableStatus}
             </div>
+            {renderPot()}
             {renderCommunityCards(communityCards)}
             {renderBetChip(playerSeats.player2, 'bottom')}
           </div>
@@ -294,18 +447,10 @@ function App() {
         </section>
 
         <footer className="room-actions">
-          {mySeat ? (
-            <button
-              type="button"
-              onClick={() => handleReady(!mySeat.ready)}
-              disabled={gameState === 'playing'}
-            >
-              {gameState === 'playing' ? '已准备' : mySeat.ready ? '取消准备' : '准备'}
-            </button>
-          ) : (
-            <p>{roomFull ? '房间已满' : '等待入座'}</p>
-          )}
+          {renderRoomActions()}
+          {actionMessage && <p className="action-message">{actionMessage}</p>}
           {playerCount < 2 && !roomFull && <p>等待另一位玩家加入</p>}
+          {renderActionLog()}
         </footer>
       </main>
     );

@@ -112,6 +112,16 @@ div {
   text-align: center;
 }
 
+.pot-badge {
+  background: rgba(9, 20, 18, 0.56);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  color: #fff4c4;
+  font-size: 14px;
+  font-weight: 800;
+  padding: 5px 12px;
+}
+
 .seat {
   display: flex;
   justify-content: center;
@@ -324,6 +334,45 @@ div {
 .room-actions button:disabled {
   background: #3f5149;
   color: #b8c7bf;
+}
+
+.action-buttons {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  max-width: 360px;
+  width: 100%;
+}
+
+.action-buttons button {
+  min-height: 46px;
+  min-width: 0;
+  padding: 8px 10px;
+}
+
+.action-buttons button:only-child,
+.action-buttons button:nth-last-child(2):first-child,
+.action-buttons button:nth-last-child(2):first-child + button {
+  grid-column: auto;
+}
+
+.action-message {
+  color: #f1cc74;
+  font-weight: 700;
+}
+
+.action-log {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  box-sizing: border-box;
+  color: #b9c7c1;
+  display: grid;
+  font-size: 12px;
+  gap: 3px;
+  max-width: 360px;
+  padding: 8px 10px;
+  width: 100%;
 }
 
 @media (min-width: 700px) {

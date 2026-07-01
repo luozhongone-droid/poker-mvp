@@ -28,11 +28,17 @@ function createRoom(roomId) {
     gameState: 'waiting',
     street: 'preflop',
     communityCards: [],
+    deck: [],
     dealerSeat: 1,
     smallBlindSeat: 1,
     bigBlindSeat: 2,
     currentBets: { 1: 0, 2: 0 },
     pot: 0,
+    currentTurn: null,
+    hasVoluntaryRaise: false,
+    handEnded: false,
+    winnerSeat: null,
+    actionLog: [],
     countdown: null,
     countdownTimer: null
   };
@@ -128,9 +134,11 @@ function getPublicPlayer(roomId, player, seatNumber) {
   const room = rooms.get(roomId);
 
   return {
+    seat: seatNumber,
     socketId: player.socketId,
     nickname: player.nickname,
     ready: player.ready,
+    online: true,
     chips: player.chips,
     currentBet: room?.currentBets?.[seatNumber] || 0,
     isDealer: room?.dealerSeat === seatNumber,
@@ -160,12 +168,21 @@ function getRoomState(roomId) {
     bigBlindSeat: room?.bigBlindSeat || 2,
     currentBets: room?.currentBets || { 1: 0, 2: 0 },
     pot: room?.pot || 0,
+    currentTurn: room?.currentTurn || null,
+    hasVoluntaryRaise: room?.hasVoluntaryRaise || false,
+    handEnded: room?.handEnded || false,
+    winnerSeat: room?.winnerSeat || null,
+    actionLog: room?.actionLog || [],
     countdown: room?.countdown || null
   };
 }
 
 function broadcastRoomState(roomId) {
   io.to(roomId).emit('room-state', getRoomState(roomId));
+}
+
+function broadcastGameUpdated(roomId) {
+  io.to(roomId).emit('game-updated', getRoomState(roomId));
 }
 
 function broadcastRoomPlayers(roomId) {
@@ -186,6 +203,22 @@ function getPlayerBySeat(seats, seatNumber) {
   return seatNumber === 1 ? seats.player1 : seats.player2;
 }
 
+function getSeatBySocket(seats, socketId) {
+  if (seats.player1?.socketId === socketId) {
+    return 1;
+  }
+
+  if (seats.player2?.socketId === socketId) {
+    return 2;
+  }
+
+  return null;
+}
+
+function getOpponentSeat(seatNumber) {
+  return seatNumber === 1 ? 2 : 1;
+}
+
 function postBlinds(room, seats) {
   room.dealerSeat = 1;
   room.smallBlindSeat = room.dealerSeat;
@@ -200,6 +233,87 @@ function postBlinds(room, seats) {
   bigBlindPlayer.chips -= 2;
   room.currentBets[room.smallBlindSeat] = 1;
   room.currentBets[room.bigBlindSeat] = 2;
+}
+
+function collectBetsToPot(room) {
+  room.pot += room.currentBets[1] + room.currentBets[2];
+  room.currentBets = { 1: 0, 2: 0 };
+}
+
+function dealFlopForRoom(room) {
+  room.communityCards = dealFlop(room.deck);
+  room.street = 'flop';
+  room.currentTurn = null;
+  room.hasVoluntaryRaise = false;
+}
+
+function finishPreflop(roomId) {
+  const room = rooms.get(roomId);
+
+  if (!room || room.street !== 'preflop' || room.handEnded) {
+    return;
+  }
+
+  collectBetsToPot(room);
+  dealFlopForRoom(room);
+  broadcastRoomPlayers(roomId);
+  broadcastRoomState(roomId);
+  broadcastGameUpdated(roomId);
+}
+
+function handleFold(roomId, room, seatNumber) {
+  const opponentSeat = getOpponentSeat(seatNumber);
+  room.handEnded = true;
+  room.gameState = 'ended';
+  room.winnerSeat = opponentSeat;
+  room.currentTurn = null;
+  room.actionLog.push(`Player ${seatNumber} folds`);
+}
+
+function handleCall(roomId, room, seats, seatNumber) {
+  const opponentSeat = getOpponentSeat(seatNumber);
+  const player = getPlayerBySeat(seats, seatNumber);
+  const toCall = room.currentBets[opponentSeat] - room.currentBets[seatNumber];
+
+  player.chips -= toCall;
+  room.currentBets[seatNumber] += toCall;
+  room.actionLog.push(`Player ${seatNumber} calls ${toCall}`);
+
+  if (room.hasVoluntaryRaise) {
+    finishPreflop(roomId);
+    return true;
+  }
+
+  room.currentTurn = opponentSeat;
+  return false;
+}
+
+function handleCheck(roomId, room, seatNumber) {
+  room.actionLog.push(`Player ${seatNumber} checks`);
+  finishPreflop(roomId);
+  return true;
+}
+
+function handleRaise(room, seats, seatNumber, raiseTo) {
+  const opponentSeat = getOpponentSeat(seatNumber);
+  const player = getPlayerBySeat(seats, seatNumber);
+  const addAmount = raiseTo - room.currentBets[seatNumber];
+
+  player.chips -= addAmount;
+  room.currentBets[seatNumber] = raiseTo;
+  room.hasVoluntaryRaise = true;
+  room.currentTurn = opponentSeat;
+  room.actionLog.push(`Player ${seatNumber} raises to ${raiseTo}`);
+}
+
+function rejectAction(socket, message) {
+  socket.emit('action-error', { message });
+}
+
+function broadcastGame(roomId) {
+  broadcastRoomPlayers(roomId);
+  broadcastRoomState(roomId);
+  broadcastGameUpdated(roomId);
 }
 
 function clearCountdown(room) {
@@ -238,19 +352,23 @@ function startGame(roomId) {
 
   const deck = shuffle(createDeck());
   const holeCards = dealHoleCards(deck);
-  const flop = dealFlop(deck);
   const hands = new Map([
     [seats.player1.socketId, holeCards.player1],
     [seats.player2.socketId, holeCards.player2]
   ]);
 
-  room.street = 'flop';
-  room.communityCards = flop;
+  room.deck = deck;
+  room.street = 'preflop';
+  room.communityCards = [];
+  room.currentTurn = room.smallBlindSeat;
+  room.hasVoluntaryRaise = false;
+  room.handEnded = false;
+  room.winnerSeat = null;
+  room.actionLog = [];
   roomHands.set(roomId, hands);
   io.sockets.sockets.get(seats.player1.socketId)?.emit('hand', holeCards.player1);
   io.sockets.sockets.get(seats.player2.socketId)?.emit('hand', holeCards.player2);
-  broadcastRoomPlayers(roomId);
-  broadcastRoomState(roomId);
+  broadcastGame(roomId);
 }
 
 function startCountdown(roomId) {
@@ -344,6 +462,11 @@ io.on('connection', (socket) => {
         bigBlindSeat: 2,
         currentBets: { 1: 0, 2: 0 },
         pot: 0,
+        currentTurn: null,
+        hasVoluntaryRaise: false,
+        handEnded: false,
+        winnerSeat: null,
+        actionLog: [],
         countdown: null
       });
       return;
@@ -409,6 +532,112 @@ io.on('connection', (socket) => {
 
     broadcastRoomPlayers(roomId);
     updateCountdownState(roomId);
+  });
+
+  socket.on('player-action', (payload) => {
+    const { roomId } = socket.data;
+    const room = rooms.get(roomId);
+    const seats = roomPlayers.get(roomId);
+
+    if (!roomId || !room || !seats) {
+      rejectAction(socket, '房间不存在');
+      return;
+    }
+
+    const seatNumber = getSeatBySocket(seats, socket.id);
+
+    if (!seatNumber) {
+      rejectAction(socket, '你不在当前牌局中');
+      return;
+    }
+
+    if (room.handEnded || room.gameState === 'ended') {
+      rejectAction(socket, '本局已经结束');
+      return;
+    }
+
+    if (room.gameState !== 'playing' || room.street !== 'preflop') {
+      rejectAction(socket, '当前阶段不能操作');
+      return;
+    }
+
+    if (room.currentTurn !== seatNumber) {
+      rejectAction(socket, '还没轮到你操作');
+      return;
+    }
+
+    const action = payload?.action;
+    const opponentSeat = getOpponentSeat(seatNumber);
+    const player = getPlayerBySeat(seats, seatNumber);
+    const toCall = room.currentBets[opponentSeat] - room.currentBets[seatNumber];
+
+    if (action === 'fold') {
+      handleFold(roomId, room, seatNumber);
+      broadcastGame(roomId);
+      return;
+    }
+
+    if (action === 'call') {
+      if (toCall <= 0) {
+        rejectAction(socket, '当前不能 call');
+        return;
+      }
+
+      if (player.chips < toCall) {
+        rejectAction(socket, '筹码不足');
+        return;
+      }
+
+      const preflopFinished = handleCall(roomId, room, seats, seatNumber);
+
+      if (!preflopFinished) {
+        broadcastGame(roomId);
+      }
+
+      return;
+    }
+
+    if (action === 'check') {
+      if (toCall !== 0) {
+        rejectAction(socket, '当前不能 check');
+        return;
+      }
+
+      const preflopFinished = handleCheck(roomId, room, seatNumber);
+
+      if (!preflopFinished) {
+        broadcastGame(roomId);
+      }
+
+      return;
+    }
+
+    if (action === 'raise') {
+      const raiseTo = Number(payload?.raiseTo || 4);
+
+      if (raiseTo !== 4) {
+        rejectAction(socket, '当前只支持 Raise to 4');
+        return;
+      }
+
+      if (raiseTo <= room.currentBets[seatNumber] || raiseTo <= room.currentBets[opponentSeat]) {
+        rejectAction(socket, '加注额必须大于双方当前下注');
+        return;
+      }
+
+      const addAmount = raiseTo - room.currentBets[seatNumber];
+
+      if (player.chips < addAmount) {
+        rejectAction(socket, '筹码不足');
+        return;
+      }
+
+      handleRaise(room, seats, seatNumber, raiseTo);
+      broadcastGame(roomId);
+      return;
+    }
+
+    rejectAction(socket, '未知操作');
   });
 
   socket.on('disconnect', () => {
