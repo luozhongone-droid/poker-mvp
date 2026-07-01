@@ -39,6 +39,10 @@ function createRoom(roomId) {
     actedThisRound: { 1: false, 2: false },
     handEnded: false,
     winnerSeat: null,
+    isTie: false,
+    showdownHands: null,
+    handRanks: null,
+    showdownResult: null,
     actionLog: [],
     countdown: null,
     countdownTimer: null
@@ -90,6 +94,209 @@ function dealFlop(deck) {
 
 function dealOneCommunityCard(deck) {
   return deck.splice(0, 1)[0];
+}
+
+const rankValues = {
+  2: 2,
+  3: 3,
+  4: 4,
+  5: 5,
+  6: 6,
+  7: 7,
+  8: 8,
+  9: 9,
+  10: 10,
+  J: 11,
+  Q: 12,
+  K: 13,
+  A: 14
+};
+
+const categoryLabels = {
+  0: 'High Card',
+  1: 'One Pair',
+  2: 'Two Pair',
+  3: 'Three of a Kind',
+  4: 'Straight',
+  5: 'Flush',
+  6: 'Full House',
+  7: 'Four of a Kind',
+  8: 'Straight Flush',
+  9: 'Royal Flush'
+};
+
+function getCardValue(card) {
+  return rankValues[card.rank];
+}
+
+function getFiveCardCombinations(cards) {
+  const combinations = [];
+
+  for (let first = 0; first < cards.length - 4; first += 1) {
+    for (let second = first + 1; second < cards.length - 3; second += 1) {
+      for (let third = second + 1; third < cards.length - 2; third += 1) {
+        for (let fourth = third + 1; fourth < cards.length - 1; fourth += 1) {
+          for (let fifth = fourth + 1; fifth < cards.length; fifth += 1) {
+            combinations.push([cards[first], cards[second], cards[third], cards[fourth], cards[fifth]]);
+          }
+        }
+      }
+    }
+  }
+
+  return combinations;
+}
+
+function getStraightHigh(values) {
+  const uniqueValues = [...new Set(values)].sort((a, b) => b - a);
+
+  if (uniqueValues.includes(14)) {
+    uniqueValues.push(1);
+  }
+
+  for (let index = 0; index <= uniqueValues.length - 5; index += 1) {
+    const window = uniqueValues.slice(index, index + 5);
+    const isStraight = window.every((value, valueIndex) => valueIndex === 0 || value === window[valueIndex - 1] - 1);
+
+    if (isStraight) {
+      return window[0] === 1 ? 5 : window[0];
+    }
+  }
+
+  return null;
+}
+
+function compareRankObjects(first, second) {
+  if (first.categoryRank !== second.categoryRank) {
+    return first.categoryRank > second.categoryRank ? 1 : -1;
+  }
+
+  const maxLength = Math.max(first.tiebreakers.length, second.tiebreakers.length);
+
+  for (let index = 0; index < maxLength; index += 1) {
+    const firstValue = first.tiebreakers[index] || 0;
+    const secondValue = second.tiebreakers[index] || 0;
+
+    if (firstValue !== secondValue) {
+      return firstValue > secondValue ? 1 : -1;
+    }
+  }
+
+  return 0;
+}
+
+function evaluateFiveCards(cards) {
+  const values = cards.map(getCardValue).sort((a, b) => b - a);
+  const isFlush = cards.every((card) => card.suit === cards[0].suit);
+  const straightHigh = getStraightHigh(values);
+  const countByValue = values.reduce((counts, value) => {
+    counts[value] = (counts[value] || 0) + 1;
+    return counts;
+  }, {});
+  const groups = Object.entries(countByValue)
+    .map(([value, count]) => ({ value: Number(value), count }))
+    .sort((first, second) => second.count - first.count || second.value - first.value);
+
+  if (isFlush && straightHigh) {
+    const isRoyal = straightHigh === 14;
+    return {
+      category: isRoyal ? 'royal-flush' : 'straight-flush',
+      categoryLabel: categoryLabels[isRoyal ? 9 : 8],
+      categoryRank: isRoyal ? 9 : 8,
+      tiebreakers: [straightHigh],
+      bestFive: cards
+    };
+  }
+
+  if (groups[0].count === 4) {
+    return {
+      category: 'quads',
+      categoryLabel: categoryLabels[7],
+      categoryRank: 7,
+      tiebreakers: [groups[0].value, groups[1].value],
+      bestFive: cards
+    };
+  }
+
+  if (groups[0].count === 3 && groups[1].count === 2) {
+    return {
+      category: 'full-house',
+      categoryLabel: categoryLabels[6],
+      categoryRank: 6,
+      tiebreakers: [groups[0].value, groups[1].value],
+      bestFive: cards
+    };
+  }
+
+  if (isFlush) {
+    return {
+      category: 'flush',
+      categoryLabel: categoryLabels[5],
+      categoryRank: 5,
+      tiebreakers: values,
+      bestFive: cards
+    };
+  }
+
+  if (straightHigh) {
+    return {
+      category: 'straight',
+      categoryLabel: categoryLabels[4],
+      categoryRank: 4,
+      tiebreakers: [straightHigh],
+      bestFive: cards
+    };
+  }
+
+  if (groups[0].count === 3) {
+    return {
+      category: 'trips',
+      categoryLabel: categoryLabels[3],
+      categoryRank: 3,
+      tiebreakers: [groups[0].value, ...groups.slice(1).map((group) => group.value).sort((a, b) => b - a)],
+      bestFive: cards
+    };
+  }
+
+  if (groups[0].count === 2 && groups[1].count === 2) {
+    const pairValues = groups
+      .filter((group) => group.count === 2)
+      .map((group) => group.value)
+      .sort((a, b) => b - a);
+    const kicker = groups.find((group) => group.count === 1).value;
+
+    return {
+      category: 'two-pair',
+      categoryLabel: categoryLabels[2],
+      categoryRank: 2,
+      tiebreakers: [...pairValues, kicker],
+      bestFive: cards
+    };
+  }
+
+  if (groups[0].count === 2) {
+    return {
+      category: 'one-pair',
+      categoryLabel: categoryLabels[1],
+      categoryRank: 1,
+      tiebreakers: [groups[0].value, ...groups.slice(1).map((group) => group.value).sort((a, b) => b - a)],
+      bestFive: cards
+    };
+  }
+
+  return {
+    category: 'high-card',
+    categoryLabel: categoryLabels[0],
+    categoryRank: 0,
+    tiebreakers: values,
+    bestFive: cards
+  };
+}
+
+function evaluateSevenCards(cards) {
+  return getFiveCardCombinations(cards)
+    .map(evaluateFiveCards)
+    .sort((first, second) => compareRankObjects(second, first))[0];
 }
 
 app.get('/health', (req, res) => {
@@ -178,6 +385,10 @@ function getRoomState(roomId) {
     actedThisRound: room?.actedThisRound || { 1: false, 2: false },
     handEnded: room?.handEnded || false,
     winnerSeat: room?.winnerSeat || null,
+    isTie: room?.isTie || false,
+    showdownHands: room?.showdownHands || null,
+    handRanks: room?.handRanks || null,
+    showdownResult: room?.showdownResult || null,
     actionLog: room?.actionLog || [],
     countdown: room?.countdown || null
   };
@@ -250,6 +461,27 @@ function collectBetsToPot(room) {
   room.currentBets = { 1: 0, 2: 0 };
 }
 
+function awardPotToSeat(room, seats, seatNumber) {
+  const winner = getPlayerBySeat(seats, seatNumber);
+  const awardedPot = room.pot;
+
+  winner.chips += awardedPot;
+  room.pot = 0;
+
+  return awardedPot;
+}
+
+function splitPot(room, seats) {
+  const splitAmount = Math.floor(room.pot / 2);
+  const remainder = room.pot % 2;
+
+  seats.player1.chips += splitAmount + remainder;
+  seats.player2.chips += splitAmount;
+  room.pot = 0;
+
+  return { splitAmount, remainderToSeat: remainder ? 1 : null };
+}
+
 function startBettingRound(room, street) {
   room.street = street;
   room.currentBets = { 1: 0, 2: 0 };
@@ -283,14 +515,78 @@ function dealRiverForRoom(room) {
   startBettingRound(room, 'river');
 }
 
-function finishShowdownReady(room) {
-  room.street = 'showdown-ready';
+function performShowdown(roomId, room, seats) {
+  const hands = roomHands.get(roomId);
+  const player1Hand = hands?.get(seats.player1.socketId);
+  const player2Hand = hands?.get(seats.player2.socketId);
+
+  if (!player1Hand || !player2Hand || room.communityCards.length < 5) {
+    return;
+  }
+
+  const player1Rank = evaluateSevenCards([...player1Hand, ...room.communityCards]);
+  const player2Rank = evaluateSevenCards([...player2Hand, ...room.communityCards]);
+  const comparison = compareRankObjects(player1Rank, player2Rank);
+  const originalPot = room.pot;
+
+  room.street = 'showdown';
+  room.gameState = 'ended';
+  room.handEnded = true;
   room.currentTurn = null;
   room.hasVoluntaryRaise = false;
   room.actedThisRound = { 1: false, 2: false };
+  room.showdownHands = {
+    player1: player1Hand,
+    player2: player2Hand
+  };
+  room.handRanks = {
+    player1: player1Rank,
+    player2: player2Rank
+  };
+
+  if (comparison > 0) {
+    room.winnerSeat = 1;
+    room.isTie = false;
+    awardPotToSeat(room, seats, 1);
+    room.showdownResult = {
+      winnerSeat: 1,
+      isTie: false,
+      potAwarded: originalPot,
+      winningCategory: player1Rank.categoryLabel
+    };
+    room.actionLog.push(`Player 1 wins with ${player1Rank.categoryLabel}`);
+    return;
+  }
+
+  if (comparison < 0) {
+    room.winnerSeat = 2;
+    room.isTie = false;
+    awardPotToSeat(room, seats, 2);
+    room.showdownResult = {
+      winnerSeat: 2,
+      isTie: false,
+      potAwarded: originalPot,
+      winningCategory: player2Rank.categoryLabel
+    };
+    room.actionLog.push(`Player 2 wins with ${player2Rank.categoryLabel}`);
+    return;
+  }
+
+  const splitResult = splitPot(room, seats);
+  room.winnerSeat = null;
+  room.isTie = true;
+  room.showdownResult = {
+    winnerSeat: null,
+    isTie: true,
+    potAwarded: originalPot,
+    splitAmount: splitResult.splitAmount,
+    remainderToSeat: splitResult.remainderToSeat,
+    winningCategory: player1Rank.categoryLabel
+  };
+  room.actionLog.push(`Split pot with ${player1Rank.categoryLabel}`);
 }
 
-function advanceFromStreet(room) {
+function advanceFromStreet(roomId, room, seats) {
   collectBetsToPot(room);
 
   if (room.street === 'preflop') {
@@ -309,7 +605,7 @@ function advanceFromStreet(room) {
   }
 
   if (room.street === 'river') {
-    finishShowdownReady(room);
+    performShowdown(roomId, room, seats);
   }
 }
 
@@ -320,7 +616,13 @@ function finishPreflop(roomId) {
     return;
   }
 
-  advanceFromStreet(room);
+  const seats = roomPlayers.get(roomId);
+
+  if (!seats) {
+    return;
+  }
+
+  advanceFromStreet(roomId, room, seats);
   broadcastRoomPlayers(roomId);
   broadcastRoomState(roomId);
   broadcastGameUpdated(roomId);
@@ -333,19 +635,36 @@ function finishCurrentStreet(roomId) {
     return;
   }
 
-  advanceFromStreet(room);
+  const seats = roomPlayers.get(roomId);
+
+  if (!seats) {
+    return;
+  }
+
+  advanceFromStreet(roomId, room, seats);
   broadcastRoomPlayers(roomId);
   broadcastRoomState(roomId);
   broadcastGameUpdated(roomId);
 }
 
-function handleFold(roomId, room, seatNumber) {
+function handleFold(room, seats, seatNumber) {
   const opponentSeat = getOpponentSeat(seatNumber);
+  collectBetsToPot(room);
+  const awardedPot = awardPotToSeat(room, seats, opponentSeat);
+
   room.handEnded = true;
   room.gameState = 'ended';
   room.winnerSeat = opponentSeat;
+  room.isTie = false;
   room.currentTurn = null;
+  room.showdownResult = {
+    winnerSeat: opponentSeat,
+    isTie: false,
+    potAwarded: awardedPot,
+    winningCategory: null
+  };
   room.actionLog.push(`Player ${seatNumber} folds`);
+  room.actionLog.push(`Player ${opponentSeat} wins pot ${awardedPot}`);
 }
 
 function handleCall(roomId, room, seats, seatNumber) {
@@ -512,6 +831,10 @@ function startGame(roomId) {
   room.actedThisRound = { 1: false, 2: false };
   room.handEnded = false;
   room.winnerSeat = null;
+  room.isTie = false;
+  room.showdownHands = null;
+  room.handRanks = null;
+  room.showdownResult = null;
   room.actionLog = [];
   roomHands.set(roomId, hands);
   io.sockets.sockets.get(seats.player1.socketId)?.emit('hand', holeCards.player1);
@@ -615,6 +938,10 @@ io.on('connection', (socket) => {
         actedThisRound: { 1: false, 2: false },
         handEnded: false,
         winnerSeat: null,
+        isTie: false,
+        showdownHands: null,
+        handRanks: null,
+        showdownResult: null,
         actionLog: [],
         countdown: null
       });
@@ -721,7 +1048,7 @@ io.on('connection', (socket) => {
     const toCall = room.currentBets[opponentSeat] - room.currentBets[seatNumber];
 
     if (action === 'fold') {
-      handleFold(roomId, room, seatNumber);
+      handleFold(room, seats, seatNumber);
       broadcastGame(roomId);
       return;
     }

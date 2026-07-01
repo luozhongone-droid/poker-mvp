@@ -21,6 +21,10 @@ function App() {
     currentTurn: null,
     pot: 0,
     winnerSeat: null,
+    isTie: false,
+    showdownHands: null,
+    handRanks: null,
+    showdownResult: null,
     handEnded: false,
     actionLog: [],
     countdown: null
@@ -56,6 +60,10 @@ function App() {
         currentTurn: null,
         pot: 0,
         winnerSeat: null,
+        isTie: false,
+        showdownHands: null,
+        handRanks: null,
+        showdownResult: null,
         handEnded: false,
         actionLog: [],
         countdown: null
@@ -73,6 +81,10 @@ function App() {
       currentTurn: null,
       pot: 0,
       winnerSeat: null,
+      isTie: false,
+      showdownHands: null,
+      handRanks: null,
+      showdownResult: null,
       handEnded: false,
       actionLog: [],
       countdown: null
@@ -234,14 +246,17 @@ function App() {
       flop: 'Flop',
       turn: 'Turn',
       river: 'River',
-      'showdown-ready': 'Showdown Ready'
+      'showdown-ready': 'Showdown Ready',
+      showdown: 'Showdown'
     };
     const streetLabel = streetLabelMap[street] || 'Preflop';
     const winnerText =
       gameState === 'ended' && roomState.winnerSeat
         ? roomState.winnerSeat === mySeatNumber
-          ? '对手弃牌，你赢得本局'
-          : '你已弃牌，对手赢得本局'
+          ? `你赢得本局，获得底池 ${roomState.showdownResult?.potAwarded || 0}`
+          : `Player ${roomState.winnerSeat} wins pot ${roomState.showdownResult?.potAwarded || 0}`
+        : gameState === 'ended' && roomState.isTie
+          ? 'Split pot'
         : '';
     const tableStatus =
       gameState === 'countdown' && countdown
@@ -251,6 +266,8 @@ function App() {
         : gameState === 'playing'
           ? street === 'showdown-ready'
             ? 'Showdown Ready'
+            : street === 'showdown'
+              ? 'Showdown'
             : `${streetLabel} · 轮到 Player ${currentTurn || '-'}`
           : playerCount < 2
             ? '等待另一位玩家加入'
@@ -279,6 +296,18 @@ function App() {
           <span className="playing-card card-back">♠</span>
         </div>
       );
+    }
+
+    function getVisibleHand(player, isCurrentPlayer) {
+      if (roomState.showdownHands?.player1 && player?.seat === 1) {
+        return roomState.showdownHands.player1;
+      }
+
+      if (roomState.showdownHands?.player2 && player?.seat === 2) {
+        return roomState.showdownHands.player2;
+      }
+
+      return isCurrentPlayer ? hand : [];
     }
 
     function renderCommunityCards(cards) {
@@ -333,8 +362,9 @@ function App() {
       const statusClassName = player
         ? `player-card__status ${player.ready ? 'is-ready' : 'is-waiting'}`
         : 'player-card__status is-empty';
-      const showOwnHand = Boolean(player?.hasHand && isCurrentPlayer && hand.length);
-      const showOpponentDealt = Boolean(player?.hasHand && !isCurrentPlayer);
+      const visibleHand = getVisibleHand(player, isCurrentPlayer);
+      const showVisibleHand = Boolean(player?.hasHand && visibleHand.length);
+      const showOpponentDealt = Boolean(player?.hasHand && !isCurrentPlayer && !visibleHand.length);
       const showReadyStatus = gameState !== 'playing';
 
       return (
@@ -353,9 +383,32 @@ function App() {
             <strong className="player-card__name">等待加入...</strong>
           )}
           {showReadyStatus && <span className={statusClassName}>{statusText}</span>}
-          {showOwnHand && renderHoleCards(hand)}
+          {showVisibleHand && renderHoleCards(visibleHand)}
           {showOpponentDealt && renderCardBacks()}
         </section>
+      );
+    }
+
+    function renderShowdownResult() {
+      if (gameState !== 'ended') {
+        return null;
+      }
+
+      const player1Rank = roomState.handRanks?.player1?.categoryLabel;
+      const player2Rank = roomState.handRanks?.player2?.categoryLabel;
+
+      return (
+        <div className="showdown-result">
+          <strong>
+            {roomState.isTie
+              ? 'Split pot'
+              : roomState.winnerSeat
+                ? `Player ${roomState.winnerSeat} wins${roomState.showdownResult?.winningCategory ? ` with ${roomState.showdownResult.winningCategory}` : ''}`
+                : '本局结束'}
+          </strong>
+          {player1Rank && <span>Player 1: {player1Rank}</span>}
+          {player2Rank && <span>Player 2: {player2Rank}</span>}
+        </div>
       );
     }
 
@@ -478,6 +531,7 @@ function App() {
           {renderRoomActions()}
           {actionMessage && <p className="action-message">{actionMessage}</p>}
           {playerCount < 2 && !roomFull && <p>等待另一位玩家加入</p>}
+          {renderShowdownResult()}
           {renderActionLog()}
         </footer>
       </main>

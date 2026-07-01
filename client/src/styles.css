@@ -361,6 +361,26 @@ div {
   font-weight: 700;
 }
 
+.showdown-result {
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  box-sizing: border-box;
+  color: #dce8e1;
+  display: grid;
+  font-size: 13px;
+  gap: 4px;
+  max-width: 360px;
+  padding: 9px 10px;
+  text-align: center;
+  width: 100%;
+}
+
+.showdown-result strong {
+  color: #fff4c4;
+  font-size: 14px;
+}
+
 .action-log {
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.08);
