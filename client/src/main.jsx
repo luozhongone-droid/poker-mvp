@@ -15,6 +15,7 @@ function App() {
   const [roomFull, setRoomFull] = useState(false);
   const [socketId, setSocketId] = useState('');
   const [roomState, setRoomState] = useState({
+    handNumber: 1,
     gameState: 'waiting',
     street: 'preflop',
     communityCards: [],
@@ -27,7 +28,8 @@ function App() {
     showdownResult: null,
     handEnded: false,
     actionLog: [],
-    countdown: null
+    countdown: null,
+    nextHandStartsAt: null
   });
   const [hand, setHand] = useState([]);
   const [actionMessage, setActionMessage] = useState('');
@@ -54,6 +56,7 @@ function App() {
       setRoomFull(false);
       setSocketId('');
       setRoomState({
+        handNumber: 1,
         gameState: 'waiting',
         street: 'preflop',
         communityCards: [],
@@ -66,7 +69,8 @@ function App() {
         showdownResult: null,
         handEnded: false,
         actionLog: [],
-        countdown: null
+        countdown: null,
+        nextHandStartsAt: null
       });
       setHand([]);
       setActionMessage('');
@@ -75,6 +79,7 @@ function App() {
 
     const savedNickname = localStorage.getItem('nickname') || '';
     setRoomState({
+      handNumber: 1,
       gameState: 'waiting',
       street: 'preflop',
       communityCards: [],
@@ -87,7 +92,8 @@ function App() {
       showdownResult: null,
       handEnded: false,
       actionLog: [],
-      countdown: null
+      countdown: null,
+      nextHandStartsAt: null
     });
     setHand([]);
     setActionMessage('');
@@ -223,6 +229,7 @@ function App() {
     const countdown = roomState.countdown;
     const street = roomState.street;
     const communityCards = roomState.communityCards || [];
+    const nextHandPending = Boolean(gameState === 'ended' && roomState.nextHandStartsAt);
     const currentTurn = roomState.currentTurn ? Number(roomState.currentTurn) : null;
     const isBettingStreet = bettingStreets.includes(street);
     const isMyTurn = Boolean(
@@ -262,7 +269,9 @@ function App() {
       gameState === 'countdown' && countdown
         ? `双方已准备，${countdown} 秒后开始游戏`
         : gameState === 'ended'
-          ? '本局结束'
+          ? nextHandPending
+            ? '本局结束 · 4 秒后进入下一局'
+            : '本局结束'
         : gameState === 'playing'
           ? street === 'showdown-ready'
             ? 'Showdown Ready'
@@ -434,7 +443,12 @@ function App() {
       }
 
       if (gameState === 'ended') {
-        return <p>{winnerText || '本局结束'}</p>;
+        return (
+          <>
+            <p>{winnerText || '本局结束'}</p>
+            {nextHandPending && <p>4 秒后自动进入下一局</p>}
+          </>
+        );
       }
 
       if (gameState !== 'playing') {
@@ -508,7 +522,7 @@ function App() {
       <main className="room-page">
         <header className="room-header">
           <h1>Room: {currentRoomId}</h1>
-          <p>当前玩家数量：{playerCount}</p>
+          <p>Hand #{roomState.handNumber || 1} · 当前玩家数量：{playerCount}</p>
         </header>
 
         <section className="table-area" aria-label="德州扑克房间">

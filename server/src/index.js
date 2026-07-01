@@ -25,6 +25,7 @@ function createRoom(roomId) {
   return {
     id: roomId,
     createdAt: new Date().toISOString(),
+    handNumber: 1,
     gameState: 'waiting',
     street: 'preflop',
     communityCards: [],
@@ -45,7 +46,9 @@ function createRoom(roomId) {
     showdownResult: null,
     actionLog: [],
     countdown: null,
-    countdownTimer: null
+    countdownTimer: null,
+    nextHandTimer: null,
+    nextHandStartsAt: null
   };
 }
 
@@ -372,6 +375,7 @@ function getRoomState(roomId) {
   const room = rooms.get(roomId);
 
   return {
+    handNumber: room?.handNumber || 1,
     gameState: room?.gameState || 'waiting',
     street: room?.street || 'preflop',
     communityCards: room?.communityCards || [],
@@ -390,7 +394,8 @@ function getRoomState(roomId) {
     handRanks: room?.handRanks || null,
     showdownResult: room?.showdownResult || null,
     actionLog: room?.actionLog || [],
-    countdown: room?.countdown || null
+    countdown: room?.countdown || null,
+    nextHandStartsAt: room?.nextHandStartsAt || null
   };
 }
 
@@ -441,7 +446,6 @@ function isPublicBettingStreet(street) {
 }
 
 function postBlinds(room, seats) {
-  room.dealerSeat = 1;
   room.smallBlindSeat = room.dealerSeat;
   room.bigBlindSeat = room.dealerSeat === 1 ? 2 : 1;
   room.currentBets = { 1: 0, 2: 0 };
@@ -555,6 +559,7 @@ function performShowdown(roomId, room, seats) {
       winningCategory: player1Rank.categoryLabel
     };
     room.actionLog.push(`Player 1 wins with ${player1Rank.categoryLabel}`);
+    scheduleNextHand(roomId);
     return;
   }
 
@@ -569,6 +574,7 @@ function performShowdown(roomId, room, seats) {
       winningCategory: player2Rank.categoryLabel
     };
     room.actionLog.push(`Player 2 wins with ${player2Rank.categoryLabel}`);
+    scheduleNextHand(roomId);
     return;
   }
 
@@ -584,6 +590,7 @@ function performShowdown(roomId, room, seats) {
     winningCategory: player1Rank.categoryLabel
   };
   room.actionLog.push(`Split pot with ${player1Rank.categoryLabel}`);
+  scheduleNextHand(roomId);
 }
 
 function advanceFromStreet(roomId, room, seats) {
@@ -782,6 +789,89 @@ function broadcastGame(roomId) {
   broadcastGameUpdated(roomId);
 }
 
+function clearNextHandTimer(room) {
+  if (room.nextHandTimer) {
+    clearTimeout(room.nextHandTimer);
+  }
+
+  room.nextHandTimer = null;
+  room.nextHandStartsAt = null;
+}
+
+function resetHandState(room) {
+  room.deck = [];
+  room.communityCards = [];
+  room.currentBets = { 1: 0, 2: 0 };
+  room.pot = 0;
+  room.currentTurn = null;
+  room.street = 'preflop';
+  room.hasVoluntaryRaise = false;
+  room.actedThisRound = { 1: false, 2: false };
+  room.handEnded = false;
+  room.winnerSeat = null;
+  room.isTie = false;
+  room.showdownHands = null;
+  room.handRanks = null;
+  room.showdownResult = null;
+  room.actionLog = [];
+}
+
+function startHand(roomId, { rotateDealer = false } = {}) {
+  const room = rooms.get(roomId);
+  const seats = roomPlayers.get(roomId);
+
+  if (!room || !seats?.player1 || !seats?.player2) {
+    if (room) {
+      clearNextHandTimer(room);
+      resetHandState(room);
+      room.gameState = 'waiting';
+      broadcastGame(roomId);
+    }
+
+    return false;
+  }
+
+  clearNextHandTimer(room);
+
+  if (rotateDealer) {
+    room.handNumber += 1;
+    room.dealerSeat = room.dealerSeat === 1 ? 2 : 1;
+  }
+
+  resetHandState(room);
+  room.gameState = 'playing';
+  postBlinds(room, seats);
+
+  const deck = shuffle(createDeck());
+  const holeCards = dealHoleCards(deck);
+  const hands = new Map([
+    [seats.player1.socketId, holeCards.player1],
+    [seats.player2.socketId, holeCards.player2]
+  ]);
+
+  room.deck = deck;
+  room.currentTurn = room.smallBlindSeat;
+  roomHands.set(roomId, hands);
+  io.sockets.sockets.get(seats.player1.socketId)?.emit('hand', holeCards.player1);
+  io.sockets.sockets.get(seats.player2.socketId)?.emit('hand', holeCards.player2);
+  broadcastGame(roomId);
+
+  return true;
+}
+
+function scheduleNextHand(roomId) {
+  const room = rooms.get(roomId);
+
+  if (!room || room.nextHandTimer) {
+    return;
+  }
+
+  room.nextHandStartsAt = Date.now() + 4000;
+  room.nextHandTimer = setTimeout(() => {
+    startHand(roomId, { rotateDealer: true });
+  }, 4000);
+}
+
 function clearCountdown(room) {
   if (room.countdownTimer) {
     clearInterval(room.countdownTimer);
@@ -813,33 +903,7 @@ function startGame(roomId) {
   }
 
   clearCountdown(room);
-  room.gameState = 'playing';
-  postBlinds(room, seats);
-
-  const deck = shuffle(createDeck());
-  const holeCards = dealHoleCards(deck);
-  const hands = new Map([
-    [seats.player1.socketId, holeCards.player1],
-    [seats.player2.socketId, holeCards.player2]
-  ]);
-
-  room.deck = deck;
-  room.street = 'preflop';
-  room.communityCards = [];
-  room.currentTurn = room.smallBlindSeat;
-  room.hasVoluntaryRaise = false;
-  room.actedThisRound = { 1: false, 2: false };
-  room.handEnded = false;
-  room.winnerSeat = null;
-  room.isTie = false;
-  room.showdownHands = null;
-  room.handRanks = null;
-  room.showdownResult = null;
-  room.actionLog = [];
-  roomHands.set(roomId, hands);
-  io.sockets.sockets.get(seats.player1.socketId)?.emit('hand', holeCards.player1);
-  io.sockets.sockets.get(seats.player2.socketId)?.emit('hand', holeCards.player2);
-  broadcastGame(roomId);
+  startHand(roomId);
 }
 
 function startCountdown(roomId) {
@@ -925,6 +989,7 @@ io.on('connection', (socket) => {
       socket.emit('player-count', 0);
       socket.emit('player-list', []);
       socket.emit('room-state', {
+        handNumber: 1,
         gameState: 'waiting',
         street: 'preflop',
         communityCards: [],
@@ -943,7 +1008,8 @@ io.on('connection', (socket) => {
         handRanks: null,
         showdownResult: null,
         actionLog: [],
-        countdown: null
+        countdown: null,
+        nextHandStartsAt: null
       });
       return;
     }
@@ -1049,6 +1115,7 @@ io.on('connection', (socket) => {
 
     if (action === 'fold') {
       handleFold(room, seats, seatNumber);
+      scheduleNextHand(roomId);
       broadcastGame(roomId);
       return;
     }
