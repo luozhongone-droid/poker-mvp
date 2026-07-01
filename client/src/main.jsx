@@ -211,9 +211,10 @@ function App() {
     const countdown = roomState.countdown;
     const street = roomState.street;
     const communityCards = roomState.communityCards || [];
+    const currentTurn = roomState.currentTurn ? Number(roomState.currentTurn) : null;
     const isBettingStreet = bettingStreets.includes(street);
     const isMyTurn = Boolean(
-      mySeatNumber && gameState === 'playing' && isBettingStreet && roomState.currentTurn === mySeatNumber
+      mySeatNumber && gameState === 'playing' && isBettingStreet && currentTurn === mySeatNumber
     );
     const toCall = mySeat && opponentSeat ? Math.max(0, opponentSeat.currentBet - mySeat.currentBet) : 0;
     const raiseTo = 4;
@@ -250,7 +251,7 @@ function App() {
         : gameState === 'playing'
           ? street === 'showdown-ready'
             ? 'Showdown Ready'
-            : `${streetLabel} · 轮到 Player ${roomState.currentTurn || '-'}`
+            : `${streetLabel} · 轮到 Player ${currentTurn || '-'}`
           : playerCount < 2
             ? '等待另一位玩家加入'
             : '等待双方准备';

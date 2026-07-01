@@ -387,14 +387,15 @@ function handleRaise(room, seats, seatNumber, raiseTo) {
 function publicStreetIsComplete(room) {
   return (
     room.currentBets[1] === room.currentBets[2] &&
-    room.actedThisRound[1] &&
-    room.actedThisRound[2]
+    room.actedThisRound?.[1] === true &&
+    room.actedThisRound?.[2] === true
   );
 }
 
 function handlePublicCheck(roomId, room, seatNumber) {
   const opponentSeat = getOpponentSeat(seatNumber);
   room.actedThisRound[seatNumber] = true;
+  room.currentTurn = opponentSeat;
   room.actionLog.push(`Player ${seatNumber} checks`);
 
   if (publicStreetIsComplete(room)) {
@@ -402,7 +403,6 @@ function handlePublicCheck(roomId, room, seatNumber) {
     return true;
   }
 
-  room.currentTurn = opponentSeat;
   return false;
 }
 
