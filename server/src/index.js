@@ -358,7 +358,7 @@ function getPublicPlayer(roomId, player, seatNumber) {
     currentBet: room?.currentBets?.[seatNumber] || 0,
     isDealer: room?.dealerSeat === seatNumber,
     blindLabel: getBlindLabel(room, seatNumber),
-    hasHand: roomHands.get(roomId)?.has(player.socketId) || false
+    hasHand: roomHands.get(roomId)?.has(seatNumber) || false
   };
 }
 
@@ -521,10 +521,27 @@ function dealRiverForRoom(room) {
 
 function performShowdown(roomId, room, seats) {
   const hands = roomHands.get(roomId);
-  const player1Hand = hands?.get(seats.player1.socketId);
-  const player2Hand = hands?.get(seats.player2.socketId);
+  const player1Hand = hands?.get(1);
+  const player2Hand = hands?.get(2);
 
   if (!player1Hand || !player2Hand || room.communityCards.length < 5) {
+    const missingHandMessages = [];
+
+    if (!player1Hand) {
+      missingHandMessages.push('Missing hand for seat 1');
+    }
+
+    if (!player2Hand) {
+      missingHandMessages.push('Missing hand for seat 2');
+    }
+
+    missingHandMessages.forEach((message) => {
+      console.error(message);
+      room.actionLog.push(message);
+    });
+    room.showdownResult = {
+      error: missingHandMessages.join(', ') || 'Missing showdown cards'
+    };
     return;
   }
 
@@ -845,8 +862,8 @@ function startHand(roomId, { rotateDealer = false } = {}) {
   const deck = shuffle(createDeck());
   const holeCards = dealHoleCards(deck);
   const hands = new Map([
-    [seats.player1.socketId, holeCards.player1],
-    [seats.player2.socketId, holeCards.player2]
+    [1, holeCards.player1],
+    [2, holeCards.player2]
   ]);
 
   room.deck = deck;
@@ -958,13 +975,14 @@ function removePlayerFromRoom(socket) {
   }
 
   const seats = roomPlayers.get(roomId);
-  roomHands.get(roomId)?.delete(socket.id);
 
   if (seats.player1?.socketId === socket.id) {
+    roomHands.get(roomId)?.delete(1);
     seats.player1 = null;
   }
 
   if (seats.player2?.socketId === socket.id) {
+    roomHands.get(roomId)?.delete(2);
     seats.player2 = null;
   }
 
