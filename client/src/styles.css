@@ -92,6 +92,8 @@ div {
     0 24px 38px rgba(0, 0, 0, 0.44);
   box-sizing: border-box;
   display: flex;
+  flex-direction: column;
+  gap: 14px;
   height: clamp(300px, 48vh, 460px);
   justify-content: center;
   max-height: 520px;
@@ -141,13 +143,47 @@ div {
 }
 
 .player-card__label {
+  align-items: center;
   color: #9fb4aa;
+  display: flex;
   font-size: 13px;
+  gap: 5px;
+  justify-content: center;
 }
 
 .player-card__name {
   font-size: 18px;
   overflow-wrap: anywhere;
+}
+
+.role-badge {
+  align-items: center;
+  background: rgba(247, 211, 106, 0.18);
+  border: 1px solid rgba(247, 211, 106, 0.45);
+  border-radius: 999px;
+  color: #ffd96a;
+  display: inline-flex;
+  font-size: 11px;
+  font-weight: 700;
+  height: 18px;
+  justify-content: center;
+  min-width: 18px;
+  padding: 0 5px;
+}
+
+.role-badge--blind {
+  background: rgba(113, 177, 255, 0.16);
+  border-color: rgba(113, 177, 255, 0.4);
+  color: #9fc8ff;
+}
+
+.player-card__stats {
+  color: #d8e1dd;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 13px;
+  gap: 6px 10px;
+  justify-content: center;
 }
 
 .player-card__status {
@@ -173,11 +209,29 @@ div {
   color: #b9c2bf;
 }
 
-.hole-cards {
+.card-row {
   display: flex;
   gap: 8px;
   justify-content: center;
   margin-top: 4px;
+}
+
+.card-row--community {
+  margin-top: 6px;
+}
+
+.community-cards {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+}
+
+.community-cards__label {
+  color: rgba(237, 248, 238, 0.72);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
 }
 
 .playing-card {

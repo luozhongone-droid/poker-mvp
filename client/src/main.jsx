@@ -14,7 +14,12 @@ function App() {
   const [playerSeats, setPlayerSeats] = useState({ player1: null, player2: null });
   const [roomFull, setRoomFull] = useState(false);
   const [socketId, setSocketId] = useState('');
-  const [roomState, setRoomState] = useState({ gameState: 'waiting', countdown: null });
+  const [roomState, setRoomState] = useState({
+    gameState: 'waiting',
+    street: 'preflop',
+    communityCards: [],
+    countdown: null
+  });
   const [hand, setHand] = useState([]);
   const roomMatch = path.match(/^\/room\/([^/]+)$/);
   const currentRoomId = roomMatch?.[1];
@@ -38,13 +43,13 @@ function App() {
       setPlayerSeats({ player1: null, player2: null });
       setRoomFull(false);
       setSocketId('');
-      setRoomState({ gameState: 'waiting', countdown: null });
+      setRoomState({ gameState: 'waiting', street: 'preflop', communityCards: [], countdown: null });
       setHand([]);
       return undefined;
     }
 
     const savedNickname = localStorage.getItem('nickname') || '';
-    setRoomState({ gameState: 'waiting', countdown: null });
+    setRoomState({ gameState: 'waiting', street: 'preflop', communityCards: [], countdown: null });
     setHand([]);
     setRoomFull(false);
     const socket = io({
@@ -161,6 +166,7 @@ function App() {
     const mySeat = playerSeats[mySeatKey]?.socketId === socketId ? playerSeats[mySeatKey] : null;
     const gameState = roomState.gameState;
     const countdown = roomState.countdown;
+    const communityCards = roomState.communityCards || [];
     const tableStatus =
       gameState === 'countdown' && countdown
         ? `双方已准备，${countdown} 秒后开始游戏`
@@ -172,7 +178,7 @@ function App() {
 
     function renderHoleCards(cards) {
       return (
-        <div className="hole-cards" aria-label="我的手牌">
+        <div className="card-row" aria-label="我的手牌">
           {cards.map((card) => (
             <span
               className={`playing-card ${card.suit === '♥' || card.suit === '♦' ? 'is-red' : 'is-black'}`}
@@ -188,9 +194,32 @@ function App() {
 
     function renderCardBacks() {
       return (
-        <div className="hole-cards" aria-label="对手盖牌">
+        <div className="card-row" aria-label="对手盖牌">
           <span className="playing-card card-back">♠</span>
           <span className="playing-card card-back">♠</span>
+        </div>
+      );
+    }
+
+    function renderCommunityCards(cards) {
+      if (!cards.length) {
+        return null;
+      }
+
+      return (
+        <div className="community-cards" aria-label="公共牌">
+          <span className="community-cards__label">Flop</span>
+          <div className="card-row card-row--community">
+            {cards.map((card) => (
+              <span
+                className={`playing-card ${card.suit === '♥' || card.suit === '♦' ? 'is-red' : 'is-black'}`}
+                key={`${card.rank}${card.suit}`}
+              >
+                {card.rank}
+                {card.suit}
+              </span>
+            ))}
+          </div>
         </div>
       );
     }
@@ -203,11 +232,22 @@ function App() {
         : 'player-card__status is-empty';
       const showOwnHand = Boolean(player?.hasHand && isCurrentPlayer && hand.length);
       const showOpponentDealt = Boolean(player?.hasHand && !isCurrentPlayer);
+      const currentBet = player?.currentBet || 0;
 
       return (
         <section className="player-card">
-          <span className="player-card__label">{label}</span>
+          <span className="player-card__label">
+            {label}
+            {player?.isDealer && <span className="role-badge">D</span>}
+            {player?.blindLabel && <span className="role-badge role-badge--blind">{player.blindLabel}</span>}
+          </span>
           <strong className="player-card__name">{player?.nickname || '等待加入...'}</strong>
+          {player && (
+            <div className="player-card__stats">
+              <span>Chips: {player.chips}</span>
+              {currentBet > 0 && <span>Bet: {currentBet}</span>}
+            </div>
+          )}
           <span className={statusClassName}>{statusText}</span>
           {showOwnHand && renderHoleCards(hand)}
           {showOpponentDealt && renderCardBacks()}
@@ -229,6 +269,7 @@ function App() {
             <div className="table-status">
               {roomFull ? '房间已满' : tableStatus}
             </div>
+            {renderCommunityCards(communityCards)}
           </div>
 
           <div className="seat seat--bottom">{renderPlayerCard('Player 2', playerSeats.player2)}</div>

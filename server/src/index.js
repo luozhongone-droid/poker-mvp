@@ -26,6 +26,13 @@ function createRoom(roomId) {
     id: roomId,
     createdAt: new Date().toISOString(),
     gameState: 'waiting',
+    street: 'preflop',
+    communityCards: [],
+    dealerSeat: 1,
+    smallBlindSeat: 1,
+    bigBlindSeat: 2,
+    currentBets: { 1: 0, 2: 0 },
+    pot: 0,
     countdown: null,
     countdownTimer: null
   };
@@ -70,6 +77,10 @@ function dealHoleCards(deck) {
   };
 }
 
+function dealFlop(deck) {
+  return deck.splice(0, 3);
+}
+
 app.get('/health', (req, res) => {
   res.json({ ok: true });
 });
@@ -97,15 +108,33 @@ function getRoomPlayers(roomId) {
   return [seats?.player1, seats?.player2].filter(Boolean);
 }
 
-function getPublicPlayer(roomId, player) {
+function getBlindLabel(room, seatNumber) {
+  if (room?.smallBlindSeat === seatNumber) {
+    return 'SB';
+  }
+
+  if (room?.bigBlindSeat === seatNumber) {
+    return 'BB';
+  }
+
+  return null;
+}
+
+function getPublicPlayer(roomId, player, seatNumber) {
   if (!player) {
     return null;
   }
+
+  const room = rooms.get(roomId);
 
   return {
     socketId: player.socketId,
     nickname: player.nickname,
     ready: player.ready,
+    chips: player.chips,
+    currentBet: room?.currentBets?.[seatNumber] || 0,
+    isDealer: room?.dealerSeat === seatNumber,
+    blindLabel: getBlindLabel(room, seatNumber),
     hasHand: roomHands.get(roomId)?.has(player.socketId) || false
   };
 }
@@ -114,8 +143,8 @@ function getPublicSeats(roomId) {
   const seats = roomPlayers.get(roomId) || createEmptySeats();
 
   return {
-    player1: getPublicPlayer(roomId, seats.player1),
-    player2: getPublicPlayer(roomId, seats.player2)
+    player1: getPublicPlayer(roomId, seats.player1, 1),
+    player2: getPublicPlayer(roomId, seats.player2, 2)
   };
 }
 
@@ -124,6 +153,13 @@ function getRoomState(roomId) {
 
   return {
     gameState: room?.gameState || 'waiting',
+    street: room?.street || 'preflop',
+    communityCards: room?.communityCards || [],
+    dealerSeat: room?.dealerSeat || 1,
+    smallBlindSeat: room?.smallBlindSeat || 1,
+    bigBlindSeat: room?.bigBlindSeat || 2,
+    currentBets: room?.currentBets || { 1: 0, 2: 0 },
+    pot: room?.pot || 0,
     countdown: room?.countdown || null
   };
 }
@@ -144,6 +180,26 @@ function broadcastRoomPlayers(roomId) {
 function bothPlayersReady(roomId) {
   const seats = roomPlayers.get(roomId);
   return Boolean(seats?.player1?.ready && seats?.player2?.ready);
+}
+
+function getPlayerBySeat(seats, seatNumber) {
+  return seatNumber === 1 ? seats.player1 : seats.player2;
+}
+
+function postBlinds(room, seats) {
+  room.dealerSeat = 1;
+  room.smallBlindSeat = room.dealerSeat;
+  room.bigBlindSeat = room.dealerSeat === 1 ? 2 : 1;
+  room.currentBets = { 1: 0, 2: 0 };
+  room.pot = 0;
+
+  const smallBlindPlayer = getPlayerBySeat(seats, room.smallBlindSeat);
+  const bigBlindPlayer = getPlayerBySeat(seats, room.bigBlindSeat);
+
+  smallBlindPlayer.chips -= 1;
+  bigBlindPlayer.chips -= 2;
+  room.currentBets[room.smallBlindSeat] = 1;
+  room.currentBets[room.bigBlindSeat] = 2;
 }
 
 function clearCountdown(room) {
@@ -178,14 +234,18 @@ function startGame(roomId) {
 
   clearCountdown(room);
   room.gameState = 'playing';
+  postBlinds(room, seats);
 
   const deck = shuffle(createDeck());
   const holeCards = dealHoleCards(deck);
+  const flop = dealFlop(deck);
   const hands = new Map([
     [seats.player1.socketId, holeCards.player1],
     [seats.player2.socketId, holeCards.player2]
   ]);
 
+  room.street = 'flop';
+  room.communityCards = flop;
   roomHands.set(roomId, hands);
   io.sockets.sockets.get(seats.player1.socketId)?.emit('hand', holeCards.player1);
   io.sockets.sockets.get(seats.player2.socketId)?.emit('hand', holeCards.player2);
@@ -275,7 +335,17 @@ io.on('connection', (socket) => {
     if (!rooms.has(roomId)) {
       socket.emit('player-count', 0);
       socket.emit('player-list', []);
-      socket.emit('room-state', { gameState: 'waiting', countdown: null });
+      socket.emit('room-state', {
+        gameState: 'waiting',
+        street: 'preflop',
+        communityCards: [],
+        dealerSeat: 1,
+        smallBlindSeat: 1,
+        bigBlindSeat: 2,
+        currentBets: { 1: 0, 2: 0 },
+        pot: 0,
+        countdown: null
+      });
       return;
     }
 
@@ -301,7 +371,8 @@ io.on('connection', (socket) => {
     const player = {
       socketId: socket.id,
       nickname: nickname || '未命名玩家',
-      ready: false
+      ready: false,
+      chips: 100
     };
 
     if (!seats.player1) {
