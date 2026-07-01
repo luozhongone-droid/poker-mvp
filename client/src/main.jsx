@@ -202,6 +202,7 @@ function App() {
   }
 
   if (roomMatch) {
+    const bettingStreets = ['preflop', 'flop', 'turn', 'river'];
     const mySeatKey = playerSeats.player1?.socketId === socketId ? 'player1' : 'player2';
     const mySeat = playerSeats[mySeatKey]?.socketId === socketId ? playerSeats[mySeatKey] : null;
     const mySeatNumber = mySeatKey === 'player1' && mySeat ? 1 : mySeat ? 2 : null;
@@ -210,8 +211,9 @@ function App() {
     const countdown = roomState.countdown;
     const street = roomState.street;
     const communityCards = roomState.communityCards || [];
+    const isBettingStreet = bettingStreets.includes(street);
     const isMyTurn = Boolean(
-      mySeatNumber && gameState === 'playing' && street === 'preflop' && roomState.currentTurn === mySeatNumber
+      mySeatNumber && gameState === 'playing' && isBettingStreet && roomState.currentTurn === mySeatNumber
     );
     const toCall = mySeat && opponentSeat ? Math.max(0, opponentSeat.currentBet - mySeat.currentBet) : 0;
     const raiseTo = 4;
@@ -219,11 +221,21 @@ function App() {
     const canRaise = Boolean(
       mySeat &&
         opponentSeat &&
-        street === 'preflop' &&
+        isBettingStreet &&
         raiseTo > mySeat.currentBet &&
         raiseTo > opponentSeat.currentBet &&
         mySeat.chips >= raiseAmount
     );
+    const canBet2 = Boolean(mySeat && street !== 'preflop' && toCall === 0 && mySeat.currentBet < 2 && mySeat.chips >= 2);
+    const canBet4 = Boolean(mySeat && street !== 'preflop' && toCall === 0 && mySeat.currentBet < 4 && mySeat.chips >= 4);
+    const streetLabelMap = {
+      preflop: 'Preflop',
+      flop: 'Flop',
+      turn: 'Turn',
+      river: 'River',
+      'showdown-ready': 'Showdown Ready'
+    };
+    const streetLabel = streetLabelMap[street] || 'Preflop';
     const winnerText =
       gameState === 'ended' && roomState.winnerSeat
         ? roomState.winnerSeat === mySeatNumber
@@ -236,9 +248,9 @@ function App() {
         : gameState === 'ended'
           ? '本局结束'
         : gameState === 'playing'
-          ? street === 'flop'
-            ? 'Flop'
-            : `Preflop · 轮到 Player ${roomState.currentTurn || '-'}`
+          ? street === 'showdown-ready'
+            ? 'Showdown Ready'
+            : `${streetLabel} · 轮到 Player ${roomState.currentTurn || '-'}`
           : playerCount < 2
             ? '等待另一位玩家加入'
             : '等待双方准备';
@@ -275,7 +287,7 @@ function App() {
 
       return (
         <div className="community-cards" aria-label="公共牌">
-          <span className="community-cards__label">Flop</span>
+          <span className="community-cards__label">{streetLabel}</span>
           <div className="card-row card-row--community">
             {cards.map((card) => (
               <span
@@ -307,7 +319,7 @@ function App() {
     }
 
     function renderPot() {
-      if (street !== 'flop' || !roomState.pot) {
+      if (street === 'preflop' || !roomState.pot) {
         return null;
       }
 
@@ -379,8 +391,12 @@ function App() {
         );
       }
 
-      if (street !== 'preflop') {
-        return <p>Flop 已发出</p>;
+      if (street === 'showdown-ready') {
+        return <p>下注结束，等待摊牌</p>;
+      }
+
+      if (!isBettingStreet) {
+        return <p>{streetLabel}</p>;
       }
 
       if (!isMyTurn) {
@@ -412,13 +428,24 @@ function App() {
           <button type="button" onClick={() => handlePlayerAction('check')}>
             Check
           </button>
-          <button
-            type="button"
-            onClick={() => handlePlayerAction('raise', { raiseTo })}
-            disabled={!canRaise}
-          >
-            Raise to 4
-          </button>
+          {street === 'preflop' ? (
+            <button
+              type="button"
+              onClick={() => handlePlayerAction('raise', { raiseTo })}
+              disabled={!canRaise}
+            >
+              Raise to 4
+            </button>
+          ) : (
+            <>
+              <button type="button" onClick={() => handlePlayerAction('bet', { betTo: 2 })} disabled={!canBet2}>
+                Bet 2
+              </button>
+              <button type="button" onClick={() => handlePlayerAction('bet', { betTo: 4 })} disabled={!canBet4}>
+                Bet 4
+              </button>
+            </>
+          )}
         </div>
       );
     }

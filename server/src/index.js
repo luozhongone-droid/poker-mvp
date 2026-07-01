@@ -36,6 +36,7 @@ function createRoom(roomId) {
     pot: 0,
     currentTurn: null,
     hasVoluntaryRaise: false,
+    actedThisRound: { 1: false, 2: false },
     handEnded: false,
     winnerSeat: null,
     actionLog: [],
@@ -85,6 +86,10 @@ function dealHoleCards(deck) {
 
 function dealFlop(deck) {
   return deck.splice(0, 3);
+}
+
+function dealOneCommunityCard(deck) {
+  return deck.splice(0, 1)[0];
 }
 
 app.get('/health', (req, res) => {
@@ -170,6 +175,7 @@ function getRoomState(roomId) {
     pot: room?.pot || 0,
     currentTurn: room?.currentTurn || null,
     hasVoluntaryRaise: room?.hasVoluntaryRaise || false,
+    actedThisRound: room?.actedThisRound || { 1: false, 2: false },
     handEnded: room?.handEnded || false,
     winnerSeat: room?.winnerSeat || null,
     actionLog: room?.actionLog || [],
@@ -219,6 +225,10 @@ function getOpponentSeat(seatNumber) {
   return seatNumber === 1 ? 2 : 1;
 }
 
+function isPublicBettingStreet(street) {
+  return street === 'flop' || street === 'turn' || street === 'river';
+}
+
 function postBlinds(room, seats) {
   room.dealerSeat = 1;
   room.smallBlindSeat = room.dealerSeat;
@@ -240,11 +250,67 @@ function collectBetsToPot(room) {
   room.currentBets = { 1: 0, 2: 0 };
 }
 
+function startBettingRound(room, street) {
+  room.street = street;
+  room.currentBets = { 1: 0, 2: 0 };
+  room.currentTurn = room.bigBlindSeat;
+  room.hasVoluntaryRaise = false;
+  room.actedThisRound = { 1: false, 2: false };
+}
+
 function dealFlopForRoom(room) {
   room.communityCards = dealFlop(room.deck);
-  room.street = 'flop';
+  startBettingRound(room, 'flop');
+}
+
+function dealTurnForRoom(room) {
+  const turnCard = dealOneCommunityCard(room.deck);
+
+  if (turnCard) {
+    room.communityCards.push(turnCard);
+  }
+
+  startBettingRound(room, 'turn');
+}
+
+function dealRiverForRoom(room) {
+  const riverCard = dealOneCommunityCard(room.deck);
+
+  if (riverCard) {
+    room.communityCards.push(riverCard);
+  }
+
+  startBettingRound(room, 'river');
+}
+
+function finishShowdownReady(room) {
+  room.street = 'showdown-ready';
   room.currentTurn = null;
   room.hasVoluntaryRaise = false;
+  room.actedThisRound = { 1: false, 2: false };
+}
+
+function advanceFromStreet(room) {
+  collectBetsToPot(room);
+
+  if (room.street === 'preflop') {
+    dealFlopForRoom(room);
+    return;
+  }
+
+  if (room.street === 'flop') {
+    dealTurnForRoom(room);
+    return;
+  }
+
+  if (room.street === 'turn') {
+    dealRiverForRoom(room);
+    return;
+  }
+
+  if (room.street === 'river') {
+    finishShowdownReady(room);
+  }
 }
 
 function finishPreflop(roomId) {
@@ -254,8 +320,20 @@ function finishPreflop(roomId) {
     return;
   }
 
-  collectBetsToPot(room);
-  dealFlopForRoom(room);
+  advanceFromStreet(room);
+  broadcastRoomPlayers(roomId);
+  broadcastRoomState(roomId);
+  broadcastGameUpdated(roomId);
+}
+
+function finishCurrentStreet(roomId) {
+  const room = rooms.get(roomId);
+
+  if (!room || room.handEnded) {
+    return;
+  }
+
+  advanceFromStreet(room);
   broadcastRoomPlayers(roomId);
   broadcastRoomState(roomId);
   broadcastGameUpdated(roomId);
@@ -302,6 +380,75 @@ function handleRaise(room, seats, seatNumber, raiseTo) {
   player.chips -= addAmount;
   room.currentBets[seatNumber] = raiseTo;
   room.hasVoluntaryRaise = true;
+  room.currentTurn = opponentSeat;
+  room.actionLog.push(`Player ${seatNumber} raises to ${raiseTo}`);
+}
+
+function publicStreetIsComplete(room) {
+  return (
+    room.currentBets[1] === room.currentBets[2] &&
+    room.actedThisRound[1] &&
+    room.actedThisRound[2]
+  );
+}
+
+function handlePublicCheck(roomId, room, seatNumber) {
+  const opponentSeat = getOpponentSeat(seatNumber);
+  room.actedThisRound[seatNumber] = true;
+  room.actionLog.push(`Player ${seatNumber} checks`);
+
+  if (publicStreetIsComplete(room)) {
+    finishCurrentStreet(roomId);
+    return true;
+  }
+
+  room.currentTurn = opponentSeat;
+  return false;
+}
+
+function handlePublicCall(roomId, room, seats, seatNumber) {
+  const opponentSeat = getOpponentSeat(seatNumber);
+  const player = getPlayerBySeat(seats, seatNumber);
+  const toCall = room.currentBets[opponentSeat] - room.currentBets[seatNumber];
+
+  player.chips -= toCall;
+  room.currentBets[seatNumber] += toCall;
+  room.actedThisRound[seatNumber] = true;
+  room.actionLog.push(`Player ${seatNumber} calls ${toCall}`);
+
+  if (publicStreetIsComplete(room)) {
+    finishCurrentStreet(roomId);
+    return true;
+  }
+
+  room.currentTurn = opponentSeat;
+  return false;
+}
+
+function handlePublicBet(room, seats, seatNumber, betTo) {
+  const opponentSeat = getOpponentSeat(seatNumber);
+  const player = getPlayerBySeat(seats, seatNumber);
+  const addAmount = betTo - room.currentBets[seatNumber];
+
+  player.chips -= addAmount;
+  room.currentBets[seatNumber] = betTo;
+  room.hasVoluntaryRaise = true;
+  room.actedThisRound[seatNumber] = true;
+  room.actedThisRound[opponentSeat] = false;
+  room.currentTurn = opponentSeat;
+  room.actionLog.push(`Player ${seatNumber} bets ${betTo}`);
+}
+
+function handlePublicRaise(room, seats, seatNumber, raiseTo) {
+  const opponentSeat = getOpponentSeat(seatNumber);
+  const player = getPlayerBySeat(seats, seatNumber);
+  const addAmount = raiseTo - room.currentBets[seatNumber];
+
+  player.chips -= addAmount;
+  room.currentBets[seatNumber] = raiseTo;
+  room.hasVoluntaryRaise = true;
+  room.actedThisRound[seatNumber] = true;
+  room.actedThisRound[opponentSeat] = false;
   room.currentTurn = opponentSeat;
   room.actionLog.push(`Player ${seatNumber} raises to ${raiseTo}`);
 }
@@ -362,6 +509,7 @@ function startGame(roomId) {
   room.communityCards = [];
   room.currentTurn = room.smallBlindSeat;
   room.hasVoluntaryRaise = false;
+  room.actedThisRound = { 1: false, 2: false };
   room.handEnded = false;
   room.winnerSeat = null;
   room.actionLog = [];
@@ -464,6 +612,7 @@ io.on('connection', (socket) => {
         pot: 0,
         currentTurn: null,
         hasVoluntaryRaise: false,
+        actedThisRound: { 1: false, 2: false },
         handEnded: false,
         winnerSeat: null,
         actionLog: [],
@@ -556,7 +705,7 @@ io.on('connection', (socket) => {
       return;
     }
 
-    if (room.gameState !== 'playing' || room.street !== 'preflop') {
+    if (room.gameState !== 'playing' || (!isPublicBettingStreet(room.street) && room.street !== 'preflop')) {
       rejectAction(socket, '当前阶段不能操作');
       return;
     }
@@ -588,9 +737,12 @@ io.on('connection', (socket) => {
         return;
       }
 
-      const preflopFinished = handleCall(roomId, room, seats, seatNumber);
+      const streetFinished =
+        room.street === 'preflop'
+          ? handleCall(roomId, room, seats, seatNumber)
+          : handlePublicCall(roomId, room, seats, seatNumber);
 
-      if (!preflopFinished) {
+      if (!streetFinished) {
         broadcastGame(roomId);
       }
 
@@ -603,17 +755,60 @@ io.on('connection', (socket) => {
         return;
       }
 
-      const preflopFinished = handleCheck(roomId, room, seatNumber);
+      const streetFinished =
+        room.street === 'preflop'
+          ? handleCheck(roomId, room, seatNumber)
+          : handlePublicCheck(roomId, room, seatNumber);
 
-      if (!preflopFinished) {
+      if (!streetFinished) {
         broadcastGame(roomId);
       }
 
       return;
     }
 
+    if (action === 'bet') {
+      const betTo = Number(payload?.betTo);
+
+      if (!isPublicBettingStreet(room.street)) {
+        rejectAction(socket, '当前不能 bet');
+        return;
+      }
+
+      if (toCall !== 0) {
+        rejectAction(socket, '当前不能 bet');
+        return;
+      }
+
+      if (betTo !== 2 && betTo !== 4) {
+        rejectAction(socket, '当前只支持 Bet 2 或 Bet 4');
+        return;
+      }
+
+      if (betTo <= room.currentBets[seatNumber] || betTo <= room.currentBets[opponentSeat]) {
+        rejectAction(socket, '下注额必须大于双方当前下注');
+        return;
+      }
+
+      const addAmount = betTo - room.currentBets[seatNumber];
+
+      if (player.chips < addAmount) {
+        rejectAction(socket, '筹码不足');
+        return;
+      }
+
+      handlePublicBet(room, seats, seatNumber, betTo);
+      broadcastGame(roomId);
+      return;
+    }
+
     if (action === 'raise') {
       const raiseTo = Number(payload?.raiseTo || 4);
+
+      if (isPublicBettingStreet(room.street) && toCall <= 0) {
+        rejectAction(socket, '当前请使用 bet');
+        return;
+      }
 
       if (raiseTo !== 4) {
         rejectAction(socket, '当前只支持 Raise to 4');
@@ -632,7 +827,12 @@ io.on('connection', (socket) => {
         return;
       }
 
-      handleRaise(room, seats, seatNumber, raiseTo);
+      if (room.street === 'preflop') {
+        handleRaise(room, seats, seatNumber, raiseTo);
+      } else {
+        handlePublicRaise(room, seats, seatNumber, raiseTo);
+      }
+
       broadcastGame(roomId);
       return;
     }
