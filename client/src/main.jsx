@@ -224,6 +224,21 @@ function App() {
       );
     }
 
+    function renderBetChip(player, position) {
+      const currentBet = player?.currentBet || 0;
+
+      if (currentBet <= 0) {
+        return null;
+      }
+
+      return (
+        <div className={`table-bet table-bet--${position}`} aria-label={`${position} player current bet`}>
+          <span className="chip-icon" />
+          <span>{currentBet}</span>
+        </div>
+      );
+    }
+
     function renderPlayerCard(label, player) {
       const isCurrentPlayer = player?.socketId === socketId;
       const statusText = player ? (player.ready ? '已准备' : '未准备') : '等待加入';
@@ -232,7 +247,7 @@ function App() {
         : 'player-card__status is-empty';
       const showOwnHand = Boolean(player?.hasHand && isCurrentPlayer && hand.length);
       const showOpponentDealt = Boolean(player?.hasHand && !isCurrentPlayer);
-      const currentBet = player?.currentBet || 0;
+      const showReadyStatus = gameState !== 'playing';
 
       return (
         <section className="player-card">
@@ -241,14 +256,15 @@ function App() {
             {player?.isDealer && <span className="role-badge">D</span>}
             {player?.blindLabel && <span className="role-badge role-badge--blind">{player.blindLabel}</span>}
           </span>
-          <strong className="player-card__name">{player?.nickname || '等待加入...'}</strong>
-          {player && (
-            <div className="player-card__stats">
-              <span>Chips: {player.chips}</span>
-              {currentBet > 0 && <span>Bet: {currentBet}</span>}
-            </div>
+          {player ? (
+            <strong className="player-card__name">
+              {player.nickname}
+              <span className="player-card__chips"> · {player.chips} chips</span>
+            </strong>
+          ) : (
+            <strong className="player-card__name">等待加入...</strong>
           )}
-          <span className={statusClassName}>{statusText}</span>
+          {showReadyStatus && <span className={statusClassName}>{statusText}</span>}
           {showOwnHand && renderHoleCards(hand)}
           {showOpponentDealt && renderCardBacks()}
         </section>
@@ -266,10 +282,12 @@ function App() {
           <div className="seat seat--top">{renderPlayerCard('Player 1', playerSeats.player1)}</div>
 
           <div className="poker-table">
+            {renderBetChip(playerSeats.player1, 'top')}
             <div className="table-status">
               {roomFull ? '房间已满' : tableStatus}
             </div>
             {renderCommunityCards(communityCards)}
+            {renderBetChip(playerSeats.player2, 'bottom')}
           </div>
 
           <div className="seat seat--bottom">{renderPlayerCard('Player 2', playerSeats.player2)}</div>

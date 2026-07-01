@@ -100,6 +100,7 @@ div {
   max-width: 340px;
   min-height: 300px;
   min-width: 240px;
+  position: relative;
   width: min(78vw, 340px);
 }
 
@@ -135,9 +136,9 @@ div {
   box-sizing: border-box;
   color: #f7faf6;
   display: grid;
-  gap: 5px;
-  min-height: 88px;
-  padding: 12px 14px;
+  gap: 4px;
+  min-height: 68px;
+  padding: 9px 12px;
   text-align: center;
   width: min(76vw, 260px);
 }
@@ -152,8 +153,15 @@ div {
 }
 
 .player-card__name {
-  font-size: 18px;
+  font-size: 17px;
   overflow-wrap: anywhere;
+}
+
+.player-card__chips {
+  color: #c7d4ce;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .role-badge {
@@ -177,15 +185,6 @@ div {
   color: #9fc8ff;
 }
 
-.player-card__stats {
-  color: #d8e1dd;
-  display: flex;
-  flex-wrap: wrap;
-  font-size: 13px;
-  gap: 6px 10px;
-  justify-content: center;
-}
-
 .player-card__status {
   border-radius: 999px;
   display: inline-block;
@@ -207,6 +206,43 @@ div {
 .player-card__status.is-empty {
   background: rgba(255, 255, 255, 0.08);
   color: #b9c2bf;
+}
+
+.table-bet {
+  align-items: center;
+  background: rgba(7, 16, 15, 0.68);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.24);
+  color: #fff4c4;
+  display: flex;
+  font-size: 15px;
+  font-weight: 800;
+  gap: 6px;
+  line-height: 1;
+  padding: 6px 10px;
+  position: absolute;
+  z-index: 2;
+}
+
+.table-bet--top {
+  top: 54px;
+}
+
+.table-bet--bottom {
+  bottom: 54px;
+}
+
+.chip-icon {
+  background:
+    radial-gradient(circle, #ffe6a0 0 28%, transparent 30%),
+    conic-gradient(from 18deg, #e0444f 0 12%, #fff2c7 12% 20%, #e0444f 20% 32%, #fff2c7 32% 40%, #e0444f 40% 52%, #fff2c7 52% 60%, #e0444f 60% 72%, #fff2c7 72% 80%, #e0444f 80% 100%);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 2px rgba(99, 12, 22, 0.35);
+  display: inline-block;
+  height: 18px;
+  width: 18px;
 }
 
 .card-row {
